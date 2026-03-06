@@ -1,5 +1,5 @@
 CC=gcc
-LDLIBS=-lm -lc
+LDLIBS=-lm -lc -lpthread
 LDFLAGS=${LDLIBS}
 FLAGS_DEBUG=-g -Wall -DDEBUG -DLOGLEVEL=0 -Wextra -Wno-unused-function
 
@@ -14,6 +14,8 @@ CFLAGS_NOOMP=-O3 -std=c11 -DCHECKPOINT_INTERVAL=$(CHECKPOINT_INTERVAL)
 
 srcfiles=$(wildcard src/*.c)
 objects=$(srcfiles:%.c=%.o)
+%.o: %.c
+	${CC} ${CFLAGS_OMP} -c -o $@ $<
 
 
 # compile (fast) production version with OpenMP
@@ -22,7 +24,7 @@ objects=$(srcfiles:%.c=%.o)
 default: cesar
 .PHONY: cesar
 cesar: ${objects}
-	${CC} ${CFLAGS} -o cesar $^ ${LDLIBS}
+	${CC} ${CFLAGS_OMP} -o cesar $^ ${LDLIBS}
 
 .PHONY: cesar_omp
 cesar_omp:
