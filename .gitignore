@@ -1,0 +1,14 @@
+*.aux
+*.log
+*.out
+*.toc
+*.pdf
+/cesar
+/cesar3
+/cesar_*
+/precompiledBinary*
+benchmark_*/
+c3_*.txt
+c2_*.txt
+strace*.log
+asan.log

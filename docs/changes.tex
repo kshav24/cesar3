@@ -1,0 +1,32 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{listings}
+\usepackage{hyperref}
+
+\begin{document}
+
+\title{CESAR 3.0: High-Performance Architecture Change Log}
+\author{CESAR Parallel Reconstruction}
+\maketitle
+
+\section{Step 1: Topo-Sort Structural Prep}
+\subsection{What Changed}
+File \texttt{src/Hmm.h} was modified. The diff is:
+\begin{lstlisting}[language=C]
+--- a/src/Hmm.h
++++ b/src/Hmm.h
+@@ -25,6 +25,7 @@ typedef struct HMM {
+   struct State* states;
+   size_t num_states;
+   size_t max_states;
++  size_t num_emitting;
+ } HMM;
+\end{lstlisting}
+
+\subsection{Why}
+To eliminate the silent-state dependency bottleneck inside Viterbi.c, we are implementing a topological sort (Kahn's algorithm) to explicitly partition the HMM into purely parallel emitting states and strictly sequential silent states. The \texttt{num_emitting} field stores the array index pivot between these two domains.
+
+\subsection{Status}
+COMMITTED
+
+\end{document}

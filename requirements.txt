@@ -1,0 +1,6 @@
+# CESAR 3.0 Python requirements (CPU-only)
+# Install with: pip install -r requirements.txt
+
+# No external dependencies required.
+# The batch runner (cesar3) uses only Python standard library modules
+# (subprocess, multiprocessing, argparse, pathlib).
