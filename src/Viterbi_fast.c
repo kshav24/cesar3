@@ -171,7 +171,7 @@ void Viterbi_fast(struct HMM* hmm,
     LOGODD_T logodd = LOGODD_NEGINF;
     STATE_ID_T best_end = STATE_MAX_ID;
     for (size_t k = 0; k < hmm->num_ends; k++) {
-        Transition end = hmm->ends[k];
+        struct Transition end = hmm->ends[k];
         LOGODD_T current = vmatrix[end.origin * 4 + (T % 4)];
         LOGODD_T sum = Logodd__add(current, end.logodd);
         if (logodd < sum) {
@@ -192,7 +192,7 @@ void Viterbi_fast(struct HMM* hmm,
         return;
     }
 
-    size_t trace_buffer_size = T * 2;
+    size_t trace_buffer_size = pathlength;
     path[trace_buffer_size - 1] = &hmm->states[best_end];
 
     STATE_ID_T* local_pmatrix = NULL;
