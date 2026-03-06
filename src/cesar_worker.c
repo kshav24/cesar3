@@ -11,7 +11,7 @@
 typedef struct {
     char** jobs;
     size_t num_jobs;
-    size_t current_job_idx;
+    _Atomic size_t current_job_idx;
     pthread_mutex_t stdout_mtx;
 } WorkerPool;
 
