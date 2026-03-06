@@ -19,3 +19,10 @@ Add a new \section{} with:
 - \subsection{Code}: \begin{lstlisting}[language=C] block
 - \subsection{Status}: PLANNED / IN PROGRESS / COMMITTED / TESTED
 Never skip the LaTeX update. Always same commit as the code change.
+
+## CRITICAL INSTRUCTION 5 — No Git, No Compile
+Never run git commands. Never run make or gcc.
+Those are always run by the user in their own terminal.
+After writing or editing any file, your response must end with:
+"Files ready. Waiting for your git/make output."
+Do not proceed further until the user pastes output back.
