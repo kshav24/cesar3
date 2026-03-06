@@ -25,6 +25,7 @@ typedef struct HMM {
   struct State* states;
   size_t num_states;
   size_t max_states;
+  size_t num_emitting;
 } HMM;
 
 struct HMM* HMM__create(size_t states, size_t num_starts, size_t num_ends);
