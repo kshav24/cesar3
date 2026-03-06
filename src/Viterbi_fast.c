@@ -37,7 +37,7 @@ static inline void Viterbi_fast_step(
         if (emission_logodd == LOGODD_NEGINF) continue;
 
         LOGODD_T max_logodd = LOGODD_NEGINF;
-        STATE_ID_T origin_id = STATEMAXID;
+        STATE_ID_T origin_id = STATE_MAX_ID;
 
         for (size_t j = 0; j < state->num_incoming; j++) {
             struct Transition tr = state->incoming[j];
@@ -67,7 +67,7 @@ static inline void Viterbi_fast_step(
         // Silent states do not emit (emission cache value is typically 0, skip lookup to save ops)
         
         LOGODD_T max_logodd = LOGODD_NEGINF;
-        STATE_ID_T origin_id = STATEMAXID;
+        STATE_ID_T origin_id = STATE_MAX_ID;
 
         for (size_t j = 0; j < state->num_incoming; j++) {
             struct Transition tr = state->incoming[j];
@@ -118,10 +118,10 @@ void Viterbi_fast(struct HMM* hmm,
         ckpt_v = (LOGODD_T*) malloc(num_checkpoints * 4 * S * sizeof(LOGODD_T));
         ckpt_p0 = (STATE_ID_T*) malloc(S * sizeof(STATE_ID_T));
         dummy_row = (STATE_ID_T*) malloc(S * sizeof(STATE_ID_T));
-        for(size_t s = 0; s < S; s++) ckpt_p0[s] = STATEMAXID;
+        for(size_t s = 0; s < S; s++) ckpt_p0[s] = STATE_MAX_ID;
     } else {
         full_pmatrix = (STATE_ID_T*) malloc((T + 1) * S * sizeof(STATE_ID_T));
-        for(size_t _k = 0; _k < (T + 1) * S; _k++) full_pmatrix[_k] = STATEMAXID;
+        for(size_t _k = 0; _k < (T + 1) * S; _k++) full_pmatrix[_k] = STATE_MAX_ID;
     }
 
     LOGODD_T* vmatrix = (LOGODD_T*) malloc(S * 4 * sizeof(LOGODD_T));
@@ -141,7 +141,7 @@ void Viterbi_fast(struct HMM* hmm,
         STATE_ID_T* current_row = use_checkpoints ? dummy_row : &full_pmatrix[t * S];
 
         if (use_checkpoints) {
-            for(size_t s = 0; s < S; s++) current_row[s] = STATEMAXID;
+            for(size_t s = 0; s < S; s++) current_row[s] = STATE_MAX_ID;
         }
         if (t == 0) {
             for (size_t si = 0; si < hmm->num_starts; si++) {
@@ -169,7 +169,7 @@ void Viterbi_fast(struct HMM* hmm,
     if (use_checkpoints) free(dummy_row);
 
     LOGODD_T logodd = LOGODD_NEGINF;
-    STATE_ID_T best_end = STATEMAXID;
+    STATE_ID_T best_end = STATE_MAX_ID;
     for (size_t k = 0; k < hmm->num_ends; k++) {
         struct Transition end = hmm->ends[k];
         LOGODD_T current = vmatrix[end.origin * 4 + (T % 4)];
@@ -180,7 +180,7 @@ void Viterbi_fast(struct HMM* hmm,
         }
     }
 
-    if (best_end == STATEMAXID || logodd == LOGODD_NEGINF) {
+    if (best_end == STATE_MAX_ID || logodd == LOGODD_NEGINF) {
         free(vmatrix);
         free(emit_cache);
         if (use_checkpoints) {
@@ -207,7 +207,7 @@ void Viterbi_fast(struct HMM* hmm,
     size_t i, t = T;
     for (i = trace_buffer_size - 1; i > 0; i--) {
         struct State* state = path[i];
-        STATE_ID_T prev_id = STATEMAXID;
+        STATE_ID_T prev_id = STATE_MAX_ID;
 
         if (t == 0) {
             prev_id = use_checkpoints ? ckpt_p0[state->id] : full_pmatrix[state->id];
@@ -230,7 +230,7 @@ void Viterbi_fast(struct HMM* hmm,
 
                 for (size_t t_run = t_start; t_run <= t_end; t_run++) {
                     STATE_ID_T* local_row = &local_pmatrix[((t_run - 1) % interval) * S];
-                    for (size_t s = 0; s < S; s++) local_row[s] = STATEMAXID;
+                    for (size_t s = 0; s < S; s++) local_row[s] = STATE_MAX_ID;
                     Viterbi_fast_step(hmm, vmatrix_rerun, local_row, emit_cache, t_run, S);
                 }
             }

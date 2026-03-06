@@ -3,6 +3,7 @@
 #include <string.h>
 #include <pthread.h>
 
+#define _POSIX_C_SOURCE 200809L
 #include "cesar_worker.h"
 
 #define MAX_JOBS 500000
