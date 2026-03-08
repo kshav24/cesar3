@@ -9,8 +9,7 @@ FLAGS_DEBUG=-g -Wall -DDEBUG -DLOGLEVEL=0 -Wextra -Wno-unused-function
 CHECKPOINT_INTERVAL ?= 1000
 
 CFLAGS=-O3 -flto -march=native -std=c11 -Wall -Wno-unused-result -DCHECKPOINT_INTERVAL=$(CHECKPOINT_INTERVAL)
-CFLAGS_OMP=$(CFLAGS) -fopenmp
-CFLAGS_NOOMP=-O3 -std=c11 -DCHECKPOINT_INTERVAL=$(CHECKPOINT_INTERVAL)
+CFLAGS_OMP=$(CFLAGS)
 
 srcfiles=$(wildcard src/*.c)
 objects=$(srcfiles:%.c=%.o)
@@ -24,7 +23,7 @@ objects=$(srcfiles:%.c=%.o)
 default: cesar
 .PHONY: cesar
 cesar: ${objects}
-	${CC} ${CFLAGS_OMP} -o cesar $^ ${LDLIBS}
+	${CC} ${CFLAGS} -o cesar $^ ${LDLIBS}
 
 .PHONY: cesar_omp
 cesar_omp:
@@ -91,3 +90,7 @@ cleanCode:
 
 cleanTest:
 	make -i -C test clean
+
+.PHONY: cesar3
+cesar3:
+	g++ -O3 -std=c++17 -o cesar3 cesar3.cpp -lpthread

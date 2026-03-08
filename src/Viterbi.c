@@ -14,9 +14,7 @@
 #include <stdbool.h>
 #include <string.h>
 
-#ifdef _OPENMP
-#include <omp.h>
-#endif
+
 
 #include "Logging.h"
 #include "Stateid.h"
@@ -84,9 +82,7 @@ void Viterbi__step(struct LogoddMatrix* vmatrix, STATE_ID_T* path_row, struct HM
      * pass 0 = emitting states: independent across i at a given t → parallelise.
      * pass 1,2 = silent states: ordering dependency → must be serial.
      */
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(dynamic, 16) if(silent == 0)
-#endif
+
     for (STATE_ID_T i = 0; i < hmm->num_states; i++) {
       struct State* state = &hmm->states[i];
 
