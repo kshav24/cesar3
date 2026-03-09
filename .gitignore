@@ -28,3 +28,5 @@ doxygen.conf
 batch_test.fa
 perlexity.md
 *.fa
+src/*.o
+*.o
