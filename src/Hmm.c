@@ -11,7 +11,7 @@
 #include "Logging.h"
 #include "SafeAlloc.h"
 
-#include "HMM.h"
+#include "Hmm.h"
 
 /**
  * Create an empty Hidden Markov Model.

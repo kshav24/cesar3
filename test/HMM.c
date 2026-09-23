@@ -10,7 +10,7 @@
 #include "Transition.h"
 #include "EmissionTable.h"
 
-#include "HMM.h"
+#include "Hmm.h"
 
 struct HMM* TestHMM__hmm;
 struct EmissionTable TestHMM__et[1];

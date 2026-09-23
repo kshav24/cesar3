@@ -20,7 +20,10 @@ objects=$(srcfiles:%.c=%.o)
 # compile (fast) production version with OpenMP
 # CESAR3: compile directly to 'cesar' — avoids 'mv CESAR cesar' failing on
 # case-insensitive filesystems (macOS HFS+/APFS) where CESAR == cesar.
-default: cesar
+default: all
+.PHONY: all
+all: cesar cesar3
+
 .PHONY: cesar
 cesar: ${objects}
 	${CC} ${CFLAGS} -o cesar $^ ${LDLIBS}
@@ -84,6 +87,7 @@ cleanCode:
 	rm -fv src/*.o
 	rm -fv src/*.gch
 	rm -f cesar
+	rm -f cesar3
 	rm -f cesar_noomp
 	rm -f cesar_asan
 	rm -f debug

@@ -15,7 +15,7 @@
 #include "SafeAlloc.h"
 #include "Distribution.h"
 #include "EmissionTable.h"
-#include "HMM.h"
+#include "Hmm.h"
 #include "State.h"
 #include "Params.h"
 #include "Profile.h"

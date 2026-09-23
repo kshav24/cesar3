@@ -7,7 +7,7 @@
  */
 
 #include "State.h"
-#include "HMM.h"
+#include "Hmm.h"
 #include "Matrix.h"
 
 struct LogoddMatrix* Viterbi__init_logodd_matrix(struct HMM* hmm);

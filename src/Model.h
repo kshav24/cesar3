@@ -9,7 +9,7 @@
 #include "Literal.h"
 #include "Profile.h"
 #include "Fasta.h"
-#include "HMM.h"
+#include "Hmm.h"
 
 struct HMM* multi_exon(struct Params* params, struct Fasta* fasta, struct Profile** acceptors, struct Profile** donors);
 

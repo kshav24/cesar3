@@ -6,7 +6,7 @@
 #include <stdio.h>
 
 #include "EmissionTable.h"
-#include "HMM.h"
+#include "Hmm.h"
 
 #include "Literal.h"
 

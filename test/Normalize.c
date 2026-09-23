@@ -6,7 +6,7 @@
 #include <criterion/criterion.h>
 #include <math.h>
 
-#include "HMM.h"
+#include "Hmm.h"
 #include "Logging.h"
 #include "EmissionTable.h"
 

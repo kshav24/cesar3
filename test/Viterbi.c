@@ -7,7 +7,7 @@
 #include <math.h>
 
 #include "EmissionTable.h"
-#include "HMM.h"
+#include "Hmm.h"
 
 #include "Viterbi.h"
 
