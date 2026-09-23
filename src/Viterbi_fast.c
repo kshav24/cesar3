@@ -100,9 +100,6 @@ void Viterbi_fast(struct HMM* hmm,
                   struct State** path)
 {
     size_t S = hmm->num_states;
-    size_t required_bytes = (T + 1) * S * sizeof(STATE_ID_T);
-    bool use_checkpoints = required_bytes > (250ULL * 1024 * 1024);
-
     size_t interval;
 #ifdef CHECKPOINT_INTERVAL
     interval = CHECKPOINT_INTERVAL;
@@ -110,21 +107,11 @@ void Viterbi_fast(struct HMM* hmm,
     interval = 256;
 #endif
 
-    LOGODD_T* ckpt_v = NULL;
-    STATE_ID_T* ckpt_p0 = NULL;
-    STATE_ID_T* dummy_row = NULL;
-    STATE_ID_T* full_pmatrix = NULL;
-
-    if (use_checkpoints) {
-        size_t num_checkpoints = (T / interval) + 1;
-        ckpt_v = (LOGODD_T*) malloc(num_checkpoints * 4 * S * sizeof(LOGODD_T));
-        ckpt_p0 = (STATE_ID_T*) malloc(S * sizeof(STATE_ID_T));
-        dummy_row = (STATE_ID_T*) malloc(S * sizeof(STATE_ID_T));
-        for(size_t s = 0; s < S; s++) ckpt_p0[s] = STATE_MAX_ID;
-    } else {
-        full_pmatrix = (STATE_ID_T*) malloc((T + 1) * S * sizeof(STATE_ID_T));
-        for(size_t _k = 0; _k < (T + 1) * S; _k++) full_pmatrix[_k] = STATE_MAX_ID;
-    }
+    size_t num_checkpoints = (T / interval) + 1;
+    LOGODD_T* ckpt_v = (LOGODD_T*) malloc(num_checkpoints * 4 * S * sizeof(LOGODD_T));
+    STATE_ID_T* ckpt_p0 = (STATE_ID_T*) malloc(S * sizeof(STATE_ID_T));
+    STATE_ID_T* dummy_row = (STATE_ID_T*) malloc(S * sizeof(STATE_ID_T));
+    for (size_t s = 0; s < S; s++) ckpt_p0[s] = STATE_MAX_ID;
 
     bool allocated_obs = false;
     if (!obs1 || !obs2 || !obs3) {
@@ -153,35 +140,29 @@ void Viterbi_fast(struct HMM* hmm,
 
     /* Formward Iteration */
     for (size_t t = 0; t <= T; t++) {
-        STATE_ID_T* current_row = use_checkpoints ? dummy_row : &full_pmatrix[t * S];
-
-        if (use_checkpoints) {
-            for(size_t s = 0; s < S; s++) current_row[s] = STATE_MAX_ID;
-        }
+        for (size_t s = 0; s < S; s++) dummy_row[s] = STATE_MAX_ID;
         if (t == 0) {
             for (size_t si = 0; si < hmm->num_starts; si++) {
-                current_row[hmm->starts[si].origin] = hmm->starts[si].origin;
+                dummy_row[hmm->starts[si].origin] = hmm->starts[si].origin;
             }
         }
 
-        Viterbi_fast_step(hmm, vmatrix, current_row, emit_cache, t, S);
+        Viterbi_fast_step(hmm, vmatrix, dummy_row, emit_cache, t, S);
 
-        if (use_checkpoints) {
-            if (t == 0) {
-                memcpy(ckpt_p0, dummy_row, S * sizeof(STATE_ID_T));
-            }
-            if (t % interval == 0) {
-                size_t c = t / interval;
-                for (size_t s = 0; s < S; s++) {
-                    for (int r = 0; r < 4; r++) {
-                        ckpt_v[c * 4 * S + s * 4 + r] = vmatrix[s * 4 + r];
-                    }
+        if (t == 0) {
+            memcpy(ckpt_p0, dummy_row, S * sizeof(STATE_ID_T));
+        }
+        if (t % interval == 0) {
+            size_t c = t / interval;
+            for (size_t s = 0; s < S; s++) {
+                for (int r = 0; r < 4; r++) {
+                    ckpt_v[c * 4 * S + s * 4 + r] = vmatrix[s * 4 + r];
                 }
             }
         }
     }
 
-    if (use_checkpoints) free(dummy_row);
+    free(dummy_row);
 
     LOGODD_T logodd = LOGODD_NEGINF;
     STATE_ID_T best_end = STATE_MAX_ID;
@@ -201,12 +182,8 @@ void Viterbi_fast(struct HMM* hmm,
         free(vmatrix);
         free(emit_cache);
         if (allocated_obs) { free(obs1); free(obs2); free(obs3); }
-        if (use_checkpoints) {
-            free(ckpt_v);
-            free(ckpt_p0);
-        } else {
-            free(full_pmatrix);
-        }
+        free(ckpt_v);
+        free(ckpt_p0);
         return;
     }
 
@@ -216,14 +193,11 @@ void Viterbi_fast(struct HMM* hmm,
     }
     path[trace_buffer_size - 1] = &hmm->states[best_end];
 
-    STATE_ID_T* local_pmatrix = NULL;
-    LOGODD_T* vmatrix_rerun = NULL;
+    size_t chunk_len = T < interval ? T : interval;
+    if (chunk_len == 0) chunk_len = 1;
+    STATE_ID_T* local_pmatrix = (STATE_ID_T*) malloc(chunk_len * S * sizeof(STATE_ID_T));
+    LOGODD_T* vmatrix_rerun = (LOGODD_T*) malloc(S * 4 * sizeof(LOGODD_T));
     long current_chunk = -1;
-
-    if (use_checkpoints) {
-        local_pmatrix = (STATE_ID_T*) malloc(interval * S * sizeof(STATE_ID_T));
-        vmatrix_rerun = (LOGODD_T*) malloc(S * 4 * sizeof(LOGODD_T));
-    }
 
     size_t i, t = T;
     for (i = trace_buffer_size - 1; i > 0; i--) {
@@ -231,9 +205,7 @@ void Viterbi_fast(struct HMM* hmm,
         STATE_ID_T prev_id = STATE_MAX_ID;
 
         if (t == 0) {
-            prev_id = use_checkpoints ? ckpt_p0[state->id] : full_pmatrix[state->id];
-        } else if (!use_checkpoints) {
-            prev_id = full_pmatrix[t * S + state->id];
+            prev_id = ckpt_p0[state->id];
         } else {
             long chunk_needed = (long)((t - 1) / interval);
             if (chunk_needed != current_chunk) {
@@ -278,12 +250,8 @@ void Viterbi_fast(struct HMM* hmm,
         free(obs2);
         free(obs3);
     }
-    if (use_checkpoints) {
-        free(vmatrix_rerun);
-        free(local_pmatrix);
-        free(ckpt_v);
-        free(ckpt_p0);
-    } else {
-        free(full_pmatrix);
-    }
+    free(vmatrix_rerun);
+    free(local_pmatrix);
+    free(ckpt_v);
+    free(ckpt_p0);
 }
