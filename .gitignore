@@ -30,3 +30,7 @@ perlexity.md
 *.fa
 src/*.o
 *.o
+*.a
+kent/bin/*
+!kent/bin/README.txt
+kent/src/htslib/version.h

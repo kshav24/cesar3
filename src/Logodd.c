@@ -56,6 +56,7 @@ LOGODD_T Logodd__add(LOGODD_T a, LOGODD_T b) {
   return a + b;
 }
 
+
 /**
  * Compute the sum of two probabilities given in log space.
  * This method tries to avoid loosing precision due to conversion from log space.

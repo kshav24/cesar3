@@ -11,7 +11,7 @@ void Viterbi_fast(struct HMM* hmm,
                   size_t T,
                   Literal* observations,
                   uint16_t* obs1, uint16_t* obs2, uint16_t* obs3,
-                  size_t pathlength,
+                  size_t* path_length,
                   struct State** path);
 
 #endif /* VITERBI_FAST_H */

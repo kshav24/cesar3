@@ -50,6 +50,16 @@ void HMM_topo__sort(struct HMM* hmm) {
         }
     }
 
+    /* Fallback: if any silent state was unreachable, place it to complete the bijection */
+    if (head < S) {
+        for (STATE_ID_T i = 0; i < (STATE_ID_T)S; i++) {
+            if (!placed[i]) {
+                order[head++] = i;
+                placed[i] = 1;
+            }
+        }
+    }
+
     /* Build remap: old_id -> new position */
     for (size_t i = 0; i < S; i++)
         remap[order[i]] = (STATE_ID_T)i;

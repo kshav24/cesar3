@@ -55,6 +55,8 @@ typedef struct Params {
           split_emissions_donor,
           max_memory;
 
+  int num_threads;
+
   uint16_t num_start_codons;
   Literal* start_codons;
 

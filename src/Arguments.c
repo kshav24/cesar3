@@ -82,13 +82,8 @@ bool Arguments__read(int argc, char** argv, struct Params* parameters) {
     }
 
     if (!strcmp(argument, "-t") || !strcmp(argument, "--threads")) {
-      int nthreads = atoi(argv[++i]);
-#ifdef _OPENMP
-      omp_set_num_threads(nthreads);
-      logv(1, "CESAR3: OpenMP threads set to %d", nthreads);
-#else
-      warn("--threads specified but binary was not compiled with OpenMP (-fopenmp). Ignored.");
-#endif
+      parameters->num_threads = atoi(argv[++i]);
+      logv(1, "CESAR3: Threads set to %d", parameters->num_threads);
     } else if (!strcmp(argument, "-k") || !strcmp(argument, "--checkpoint-interval")) {
       /* Note: CHECKPOINT_INTERVAL is a compile-time constant in Viterbi.c.
        * This flag documents intent; to change it, recompile with

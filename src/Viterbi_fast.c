@@ -11,6 +11,7 @@
 #include "EmissionCache.h"
 #include "EmissionTable.h"
 #include "Logodd.h"
+#include "Logging.h"
 
 // Helper step function isolated for clean Forward and Traceback Checkpoint regeneration
 static inline void Viterbi_fast_step(
@@ -27,8 +28,7 @@ static inline void Viterbi_fast_step(
         }
     }
 
-    /* PASS A: Emitting States (Fully parallel) */
-    #pragma omp parallel for schedule(static)
+    /* PASS A: Emitting States */
     for (size_t i = 0; i < hmm->num_emitting; i++) {
         struct State* state = &hmm->states[i];
         if (state->num_emissions > t) continue;
@@ -44,7 +44,7 @@ static inline void Viterbi_fast_step(
             size_t t_prime = t - state->num_emissions;
             LOGODD_T origin_logodd = vmatrix[tr.origin * 4 + (t_prime % 4)];
             if (origin_logodd != LOGODD_NEGINF) {
-                LOGODD_T current = Logodd__add(origin_logodd, tr.logodd);
+                LOGODD_T current = Logodd__add(tr.logodd, origin_logodd);
                 if (current > max_logodd) {
                     max_logodd = current;
                     origin_id = tr.origin;
@@ -53,7 +53,7 @@ static inline void Viterbi_fast_step(
         }
         
         if (max_logodd != LOGODD_NEGINF) {
-            max_logodd = Logodd__add(max_logodd, emission_logodd);
+            max_logodd = Logodd__add(emission_logodd, max_logodd);
             if (max_logodd > vmatrix[i * 4 + (t % 4)]) {
                 vmatrix[i * 4 + (t % 4)] = max_logodd;
                 current_row[i] = origin_id;
@@ -71,9 +71,11 @@ static inline void Viterbi_fast_step(
 
         for (size_t j = 0; j < state->num_incoming; j++) {
             struct Transition tr = state->incoming[j];
+            if (t == 0 && tr.origin < hmm->num_emitting) continue;
+
             LOGODD_T origin_logodd = vmatrix[tr.origin * 4 + (t % 4)];
             if (origin_logodd != LOGODD_NEGINF) {
-                LOGODD_T current = Logodd__add(origin_logodd, tr.logodd);
+                LOGODD_T current = Logodd__add(tr.logodd, origin_logodd);
                 if (current > max_logodd) {
                     max_logodd = current;
                     origin_id = tr.origin;
@@ -94,7 +96,7 @@ void Viterbi_fast(struct HMM* hmm,
                   size_t T,
                   Literal* observations,
                   uint16_t* obs1, uint16_t* obs2, uint16_t* obs3,
-                  size_t pathlength,
+                  size_t* path_length,
                   struct State** path)
 {
     size_t S = hmm->num_states;
@@ -122,6 +124,19 @@ void Viterbi_fast(struct HMM* hmm,
     } else {
         full_pmatrix = (STATE_ID_T*) malloc((T + 1) * S * sizeof(STATE_ID_T));
         for(size_t _k = 0; _k < (T + 1) * S; _k++) full_pmatrix[_k] = STATE_MAX_ID;
+    }
+
+    bool allocated_obs = false;
+    if (!obs1 || !obs2 || !obs3) {
+        allocated_obs = true;
+        obs1 = (uint16_t*) malloc((T + 1) * sizeof(uint16_t));
+        obs2 = (uint16_t*) malloc((T + 1) * sizeof(uint16_t));
+        obs3 = (uint16_t*) malloc((T + 1) * sizeof(uint16_t));
+        for (size_t t = 0; t <= T; t++) {
+            obs1[t] = t + 1 <= T ? Literal__uint(1, &observations[t]) : 0;
+            obs2[t] = t + 2 <= T ? Literal__uint(2, &observations[t]) : 0;
+            obs3[t] = t + 3 <= T ? Literal__uint(3, &observations[t]) : 0;
+        }
     }
 
     LOGODD_T* vmatrix = (LOGODD_T*) malloc(S * 4 * sizeof(LOGODD_T));
@@ -179,10 +194,13 @@ void Viterbi_fast(struct HMM* hmm,
             logodd = sum;
         }
     }
+    logv(1, "Viterbi logodd:\t%lE", logodd);
 
     if (best_end == STATE_MAX_ID || logodd == LOGODD_NEGINF) {
+        *path_length = 0;
         free(vmatrix);
         free(emit_cache);
+        if (allocated_obs) { free(obs1); free(obs2); free(obs3); }
         if (use_checkpoints) {
             free(ckpt_v);
             free(ckpt_p0);
@@ -192,7 +210,10 @@ void Viterbi_fast(struct HMM* hmm,
         return;
     }
 
-    size_t trace_buffer_size = pathlength;
+    size_t trace_buffer_size = 2 * T;
+    if (*path_length > trace_buffer_size) {
+        trace_buffer_size = *path_length;
+    }
     path[trace_buffer_size - 1] = &hmm->states[best_end];
 
     STATE_ID_T* local_pmatrix = NULL;
@@ -246,15 +267,17 @@ void Viterbi_fast(struct HMM* hmm,
 
     const size_t offset = i;
     for (i = 0; i < trace_buffer_size - offset; i++) {
-        if (i < trace_buffer_size - offset) {
-            path[i] = path[i + offset];
-        } else {
-            path[i] = NULL;
-        }
+        path[i] = path[i + offset];
     }
+    *path_length = trace_buffer_size - offset;
 
     free(emit_cache);
     free(vmatrix);
+    if (allocated_obs) {
+        free(obs1);
+        free(obs2);
+        free(obs3);
+    }
     if (use_checkpoints) {
         free(vmatrix_rerun);
         free(local_pmatrix);

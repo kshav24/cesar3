@@ -19,6 +19,7 @@
 #include "EmissionTable.h"
 #include "Sequence.h"
 #include "Model.h"
+#include "cesar_worker.h"
 
 
 char g_loglevel = LOGLEVEL;
@@ -222,28 +223,7 @@ int main(int argc, char* argv[argc]) {
     fclose(dotfile);
   }
 
-  for (uint16_t q=0; q < fasta.num_queries; q++) {
-
-    size_t length = 2*fasta.queries[q]->length;
-    for (uint16_t i=0; i < fasta.num_references; i++) {
-      length += fasta.references[i]->length;
-    }
-
-    struct State** path = (struct State**) SAFEMALLOC(sizeof(struct State*) * length);
-    size_t path_length = 0;
-
-    time = clock();
-    Viterbi(hmm, fasta.queries[q]->length, fasta.queries[q]->sequence, &path_length, path);
-    logv(1, "Viterbi (sec):\t%f", (float)(clock() - time) / CLOCKS_PER_SEC);
-
-    struct Alignment* alignment = Alignment__create(&fasta, q, &parameters, path_length, path);
-    printf(">%s\n%s\n", "referenceExon", alignment->reference);
-    printf(">%s\n%s\n", fasta.queries[q]->name, alignment->query);
-    Alignment__destroy(alignment);
-
-    free(path);
-
-  }
+  cesar_align_all_queries(hmm, &fasta, &parameters, parameters.num_threads);
 
   HMM__destroy(hmm);
   for (uint16_t i=0; i<fasta.num_references; i++) {
