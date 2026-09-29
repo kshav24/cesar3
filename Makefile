@@ -3,13 +3,13 @@ LDLIBS=-lm -lc -lpthread
 LDFLAGS=${LDLIBS}
 FLAGS_DEBUG=-g -Wall -DDEBUG -DLOGLEVEL=0 -Wextra -Wno-unused-function
 
-# CESAR3: OpenMP for parallel Viterbi state loop (--threads N at runtime)
 # CESAR3: CHECKPOINT_INTERVAL controls traceback memory footprint (default 1000)
 # To change checkpoint interval: make CHECKPOINT_INTERVAL=500
 CHECKPOINT_INTERVAL ?= 1000
 
 CFLAGS=-O3 -flto -march=native -std=c11 -Wall -Wno-unused-result -DCHECKPOINT_INTERVAL=$(CHECKPOINT_INTERVAL)
 CFLAGS_OMP=$(CFLAGS)
+CFLAGS_NOOMP ?= $(CFLAGS)
 
 srcfiles=$(wildcard src/*.c)
 objects=$(srcfiles:%.c=%.o)
@@ -17,7 +17,7 @@ objects=$(srcfiles:%.c=%.o)
 	${CC} ${CFLAGS_OMP} -c -o $@ $<
 
 
-# compile (fast) production version with OpenMP
+# compile production version
 # CESAR3: compile directly to 'cesar' — avoids 'mv CESAR cesar' failing on
 # case-insensitive filesystems (macOS HFS+/APFS) where CESAR == cesar.
 default: all
@@ -42,13 +42,13 @@ cesar_noomp:
 # compile debugging version
 .PHONY: debug
 debug: ${objects}
-	${CC} ${FLAGS_DEBUG} -fopenmp -o $@ $^ ${LDLIBS}
+	${CC} ${FLAGS_DEBUG} -o $@ $^ ${LDLIBS}
 
 
 # compile with AddressSanitizer (for bug detection)
 .PHONY: asan
 asan:
-	${CC} -O1 -std=c11 -fsanitize=address -fno-omit-frame-pointer -fopenmp \
+	${CC} -O1 -std=c11 -fsanitize=address -fno-omit-frame-pointer \
 	      -DCHECKPOINT_INTERVAL=$(CHECKPOINT_INTERVAL) \
 	      -o cesar_asan ${srcfiles} ${LDLIBS}
 

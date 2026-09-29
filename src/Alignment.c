@@ -264,10 +264,10 @@ struct Alignment* Alignment__create(struct Fasta* fasta, uint16_t query_id, stru
       char bases[4] = "";
       Literal__str(path[i]->num_emissions, path[i]->reference, bases);
       for (; j < 3*deleted_codons; j++) {
-        if (r >= fasta->references[reference_id]->length && reference_id <= fasta->num_references) {
+        if (r >= fasta->references[reference_id]->length && reference_id + 1 < fasta->num_references) {
           r = 0;
           reference_id++;
-          logv(3, "next reference: %u", reference_id)
+          logv(3, "next reference: %u", reference_id);
         }
         self->reference[t+j] = Literal__char(fasta->references[reference_id]->sequence[r]);
         numAlignedRefChars ++;

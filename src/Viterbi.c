@@ -2,9 +2,7 @@
  * Perform the viterbi on a given HMM.
  * Copyright 2017 MPI-CBG/MPI-PKS Peter Schwede
  *
- * CESAR3: Added OpenMP parallelism for the emitting-state inner loop.
- * The path matrix and traceback are UNCHANGED from CESAR2 (correct by design).
- * Bug 5 (RAM) flagged for future work — not touching it here.
+ * CESAR3: Accelerated Viterbi with in-memory checkpointing and state partitioning.
  */
 
 #include <stdlib.h>
@@ -44,16 +42,26 @@ struct PathMatrix* Viterbi__init_path_matrix(struct HMM* hmm, size_t num_observa
 
 /**
  * Look up the emission probability of a state during an observation.
- * CESAR3: Uses pre-calculated integers to bypass dynamic Literal__uint bitmath.
+ * CESAR3: Uses pre-calculated integers for clean sequences; dispatches to
+ * EmissionTable__by_literals when N-literals are present in the observation window.
  */
-LOGODD_T Viterbi__get_emission_logodd(uint16_t* obs1, uint16_t* obs2, uint16_t* obs3, size_t t, struct State* state) {
+LOGODD_T Viterbi__get_emission_logodd(uint16_t* obs1, uint16_t* obs2, uint16_t* obs3, const bool* has_N, Literal* observations, size_t t, struct State* state) {
   if (state->num_emissions == 0) return 0;
   if (t < state->num_emissions) return LOGODD_NEGINF;
 
-  uint16_t col = 0;
-  if (state->num_emissions == 1) col = obs1[t - 1];
-  else if (state->num_emissions == 2) col = obs2[t - 2];
-  else if (state->num_emissions == 3) col = obs3[t - 3];
+  bool window_has_N = false;
+  for (uint16_t k = 0; k < state->num_emissions; k++) {
+    if (has_N[t - state->num_emissions + k]) {
+      window_has_N = true;
+      break;
+    }
+  }
+  if (__builtin_expect(window_has_N, 0)) {
+    return EmissionTable__by_literals(state->emission_table, state->reference, &observations[t - state->num_emissions]);
+  }
+
+  uint16_t col = (state->num_emissions == 1) ? obs1[t - 1] :
+                 (state->num_emissions == 2) ? obs2[t - 2] : obs3[t - 3];
 
   return EmissionTable__get(state->emission_table, col, state->reference_uint);
 }
@@ -61,47 +69,42 @@ LOGODD_T Viterbi__get_emission_logodd(uint16_t* obs1, uint16_t* obs2, uint16_t* 
 /**
  * Perform one Viterbi recursion step at time t.
  *
- * CESAR3: pass 0 (emitting states) is parallelised with OpenMP.
- *         Silent passes remain serial (intra-timestep ordering dependency).
+ * CESAR3: State-partitioned evaluation and direct pointer addressing for vmatrix.
  */
-void Viterbi__step(struct LogoddMatrix* vmatrix, STATE_ID_T* path_row, struct HMM* hmm, Literal* observations, uint16_t* obs1, uint16_t* obs2, uint16_t* obs3, size_t t) {
+void Viterbi__step(struct LogoddMatrix* vmatrix,
+                   STATE_ID_T* path_row,
+                   struct HMM* hmm,
+                   Literal* observations,
+                   uint16_t* obs1,
+                   uint16_t* obs2,
+                   uint16_t* obs3,
+                   const bool* has_N,
+                   const STATE_ID_T* emitting_states,
+                   size_t num_emitting,
+                   const STATE_ID_T* silent_states,
+                   size_t num_silent,
+                   size_t t) {
+  size_t S = hmm->num_states;
+  LOGODD_T* curr_v = &vmatrix->v[(t % 4) * S];
 
   if (t != 0) {
-    for (STATE_ID_T sid = 0; sid < hmm->num_states; sid++) {
-      LogoddMatrix__set(vmatrix, t%4, sid, LOGODD_NEGINF);
+    for (size_t sid = 0; sid < S; sid++) {
+      curr_v[sid] = LOGODD_NEGINF;
     }
   }
 
-  uint16_t silent_start = 0;
-  if (t == 0) {
-    silent_start = 2;
-  }
-
-  for (uint16_t silent = silent_start; silent <= 2; silent++) {
-    /*
-     * pass 0 = emitting states: independent across i at a given t → parallelise.
-     * pass 1,2 = silent states: ordering dependency → must be serial.
-     */
-
-    for (STATE_ID_T i = 0; i < hmm->num_states; i++) {
+  /* Pass 0: Emitting states (only when t > 0) */
+  if (t > 0) {
+    for (size_t k = 0; k < num_emitting; k++) {
+      STATE_ID_T i = emitting_states[k];
       struct State* state = &hmm->states[i];
-
-      LOGODD_T max_logodd = LOGODD_NEGINF;
-      STATE_ID_T origin_id = STATE_MAX_ID;
 
       if (state->num_emissions > t) {
         logv(6, "t=%lu\ti=%s="SID"\tCurrent state emits too much to emit this early:\t%u > %lu", t, state->name, i, state->num_emissions, t);
         continue;
       }
 
-      if (silent == 0 && state->num_emissions == 0) {
-        continue;
-      }
-      if (silent > 0 && state->num_emissions > 0) {
-        continue;
-      }
-
-      LOGODD_T emission_logodd = Viterbi__get_emission_logodd(obs1, obs2, obs3, t, state);
+      LOGODD_T emission_logodd = Viterbi__get_emission_logodd(obs1, obs2, obs3, has_N, observations, t, state);
 
       char ref[4] = "", qry[4] = "";
       if (g_loglevel > 5) {
@@ -114,27 +117,23 @@ void Viterbi__step(struct LogoddMatrix* vmatrix, STATE_ID_T* path_row, struct HM
             emission_logodd);
       }
 
-      if (state->num_emissions > 0 && emission_logodd == LOGODD_NEGINF) {
+      if (emission_logodd == LOGODD_NEGINF) {
         if (g_loglevel > 5) {
           logv(6, "t=%lu\ti=%s="SID"\tCurrent state cannot emit observation\t%s:\t%E", t, state->name, i, qry, emission_logodd);
         }
         continue;
       }
 
+      LOGODD_T max_logodd = LOGODD_NEGINF;
+      STATE_ID_T origin_id = STATE_MAX_ID;
+
       logv(6, "t=%lu\ti=%s="SID"\t1 select max prob", t, state->name, i);
+      size_t col_prev = ((size_t) t - state->num_emissions) % 4;
+      const LOGODD_T* prev_v = &vmatrix->v[col_prev * S];
+
       for (size_t j = 0; j < state->num_incoming; j++) {
         struct Transition transition = state->incoming[j];
-
-        if (silent == 2) {
-          if (transition.origin >= i) {
-            continue;
-          }
-          if (hmm->states[transition.origin].num_emissions > 0) {
-            continue;
-          }
-        }
-
-        LOGODD_T origin_logodd = LogoddMatrix__get(vmatrix, ((size_t) t - state->num_emissions) % 4, transition.origin);
+        LOGODD_T origin_logodd = prev_v[transition.origin];
 
         logv(6, "t=%lu\ti=%s="SID"\tcheck (%lu / %u), t'=t-%u", t, state->name, i, j+1, state->num_incoming, state->num_emissions);
         logv(6, "t=%lu\ti=%s="SID"\torigin_logodd=%E\tt.logodd=%E\t\tt.origin=%s="SID, t, state->name, i, origin_logodd, transition.logodd, hmm->states[transition.origin].name, transition.origin);
@@ -150,8 +149,7 @@ void Viterbi__step(struct LogoddMatrix* vmatrix, STATE_ID_T* path_row, struct HM
           origin_id = transition.origin;
           logv(6, "t=%lu\ti=%s="SID"\tnew max_logodd:\t%E\t"SID, t, state->name, i, max_logodd, origin_id);
         }
-
-      }  /* O( state->incoming ) = O( deg+(k) ) */
+      }
 
       if (max_logodd == LOGODD_NEGINF) {
         logv(6, "t=%lu\ti=%s="SID"\tmax_logodd=%E\torigin=%s="SID"", t, state->name, i, max_logodd, "[]", origin_id);
@@ -162,19 +160,84 @@ void Viterbi__step(struct LogoddMatrix* vmatrix, STATE_ID_T* path_row, struct HM
       logv(6, "t=%lu\ti=%s="SID"\t2 multiply emission logodd %E", t, state->name, i, emission_logodd);
       max_logodd = Logodd__add(emission_logodd, max_logodd);
 
-      if (max_logodd > LogoddMatrix__get(vmatrix, ((size_t) t) % 4, state->id)) {
-        LOGODD_T prevv = LogoddMatrix__get(vmatrix, t%4, state->id);
+      if (max_logodd > curr_v[state->id]) {
+        LOGODD_T prevv = curr_v[state->id];
         if (prevv == LOGODD_NEGINF) {
           logv(6, "t=%lu\ti=%s="SID"\tassign v(%lu,%s="SID") = -inf := %E", t, state->name, i, t, state->name, state->id, max_logodd);
         } else {
           logv(6, "t=%lu\ti=%s="SID"\tassign v(%lu,%s="SID") = %E := %E", t, state->name, i, t, state->name, state->id, prevv, max_logodd);
         }
-        LogoddMatrix__set(vmatrix, t%4, state->id, max_logodd);
+        curr_v[state->id] = max_logodd;
         logv(6, "t=%lu\ti=%s="SID"\tassign p(%lu,%s="SID") := "SID"", t, state->name, i, t, state->name, state->id, origin_id);
         path_row[state->id] = origin_id;
       }
     }
-  }  /* silent loop */
+  }
+
+  /* Silent passes: pass 1 and pass 2 (when t==0, only pass 2 runs) */
+  uint16_t silent_start = (t == 0) ? 2 : 1;
+
+  for (uint16_t silent = silent_start; silent <= 2; silent++) {
+    for (size_t k = 0; k < num_silent; k++) {
+      STATE_ID_T i = silent_states[k];
+      struct State* state = &hmm->states[i];
+
+      LOGODD_T max_logodd = LOGODD_NEGINF;
+      STATE_ID_T origin_id = STATE_MAX_ID;
+
+      logv(6, "t=%lu\ti=%s="SID"\t1 select max prob", t, state->name, i);
+      for (size_t j = 0; j < state->num_incoming; j++) {
+        struct Transition transition = state->incoming[j];
+
+        if (silent == 2) {
+          if (transition.origin >= i) {
+            continue;
+          }
+          if (hmm->states[transition.origin].num_emissions > 0) {
+            continue;
+          }
+        }
+
+        LOGODD_T origin_logodd = curr_v[transition.origin];
+
+        logv(6, "t=%lu\ti=%s="SID"\tcheck (%lu / %u), t'=t-%u", t, state->name, i, j+1, state->num_incoming, state->num_emissions);
+        logv(6, "t=%lu\ti=%s="SID"\torigin_logodd=%E\tt.logodd=%E\t\tt.origin=%s="SID, t, state->name, i, origin_logodd, transition.logodd, hmm->states[transition.origin].name, transition.origin);
+
+        if (origin_logodd == LOGODD_NEGINF) {
+          continue;
+        }
+
+        LOGODD_T sum = Logodd__add(transition.logodd, origin_logodd);
+
+        if (max_logodd < sum) {
+          max_logodd = sum;
+          origin_id = transition.origin;
+          logv(6, "t=%lu\ti=%s="SID"\tnew max_logodd:\t%E\t"SID, t, state->name, i, max_logodd, origin_id);
+        }
+      }
+
+      if (max_logodd == LOGODD_NEGINF) {
+        logv(6, "t=%lu\ti=%s="SID"\tmax_logodd=%E\torigin=%s="SID"", t, state->name, i, max_logodd, "[]", origin_id);
+        continue;
+      }
+      logv(6, "t=%lu\ti=%s="SID"\tmax_logodd=%E\torigin=%s="SID"", t, state->name, i, max_logodd, hmm->states[origin_id].name, origin_id);
+
+      logv(6, "t=%lu\ti=%s="SID"\t2 multiply emission logodd 0", t, state->name, i);
+      // For silent states, emission_logodd is 0, so Logodd__add(0, max_logodd) == max_logodd
+
+      if (max_logodd > curr_v[state->id]) {
+        LOGODD_T prevv = curr_v[state->id];
+        if (prevv == LOGODD_NEGINF) {
+          logv(6, "t=%lu\ti=%s="SID"\tassign v(%lu,%s="SID") = -inf := %E", t, state->name, i, t, state->name, state->id, max_logodd);
+        } else {
+          logv(6, "t=%lu\ti=%s="SID"\tassign v(%lu,%s="SID") = %E := %E", t, state->name, i, t, state->name, state->id, prevv, max_logodd);
+        }
+        curr_v[state->id] = max_logodd;
+        logv(6, "t=%lu\ti=%s="SID"\tassign p(%lu,%s="SID") := "SID"", t, state->name, i, t, state->name, state->id, origin_id);
+        path_row[state->id] = origin_id;
+      }
+    }
+  }
 }
 
 
@@ -224,14 +287,47 @@ void Viterbi(struct HMM* hmm, size_t num_observations, Literal* observations, si
     ckpt_p0[s] = STATE_MAX_ID;
   }
 
-  /* Pre-compute literal integer arrays to avoid overhead in the inner loop */
+  /* Partition states into emitting and silent states in ascending state ID order */
+  STATE_ID_T* emitting_states = (STATE_ID_T*) malloc(S * sizeof(STATE_ID_T));
+  STATE_ID_T* silent_states = (STATE_ID_T*) malloc(S * sizeof(STATE_ID_T));
+  if (!emitting_states || !silent_states) {
+    die("Failed to allocate emitting/silent state arrays in Viterbi.");
+  }
+  size_t num_emitting = 0;
+  size_t num_silent = 0;
+  for (STATE_ID_T s = 0; s < S; s++) {
+    if (hmm->states[s].num_emissions > 0) {
+      emitting_states[num_emitting++] = s;
+    } else {
+      silent_states[num_silent++] = s;
+    }
+  }
+
+  /* Pre-compute literal integer arrays and N-flag to avoid overhead in the inner loop */
+  bool* has_N = (bool*) malloc((num_observations + 1) * sizeof(bool));
+  if (!has_N) {
+    die("Failed to allocate has_N in Viterbi.");
+  }
+  bool warned_n = false;
+  for (size_t t = 0; t < num_observations; t++) {
+    has_N[t] = (observations[t] == LITERAL_N);
+    if (has_N[t] && !warned_n) {
+      warn("N literal found.");
+      warned_n = true;
+    }
+  }
+  has_N[num_observations] = false;
+
   uint16_t* obs1 = (uint16_t*) malloc((num_observations + 1) * sizeof(uint16_t));
   uint16_t* obs2 = (uint16_t*) malloc((num_observations + 1) * sizeof(uint16_t));
   uint16_t* obs3 = (uint16_t*) malloc((num_observations + 1) * sizeof(uint16_t));
+  if (!obs1 || !obs2 || !obs3) {
+    die("Failed to allocate observation arrays in Viterbi.");
+  }
   for (size_t t = 0; t <= num_observations; t++) {
-    obs1[t] = t + 1 <= num_observations ? Literal__uint(1, &observations[t]) : 0;
-    obs2[t] = t + 2 <= num_observations ? Literal__uint(2, &observations[t]) : 0;
-    obs3[t] = t + 3 <= num_observations ? Literal__uint(3, &observations[t]) : 0;
+    obs1[t] = (t + 1 <= num_observations && !has_N[t]) ? Literal__uint(1, &observations[t]) : 0;
+    obs2[t] = (t + 2 <= num_observations && !has_N[t] && !has_N[t+1]) ? Literal__uint(2, &observations[t]) : 0;
+    obs3[t] = (t + 3 <= num_observations && !has_N[t] && !has_N[t+1] && !has_N[t+2]) ? Literal__uint(3, &observations[t]) : 0;
   }
 
   /* Init start states */
@@ -252,18 +348,14 @@ void Viterbi(struct HMM* hmm, size_t num_observations, Literal* observations, si
       }
     }
     
-    Viterbi__step(vmatrix, dummy_row, hmm, observations, obs1, obs2, obs3, t);
+    Viterbi__step(vmatrix, dummy_row, hmm, observations, obs1, obs2, obs3, has_N, emitting_states, num_emitting, silent_states, num_silent, t);
     
     if (t == 0) {
       memcpy(ckpt_p0, dummy_row, S * sizeof(STATE_ID_T));
     }
     if (t % interval == 0) {
       size_t c = (size_t)(t / interval);
-      for (int r = 0; r < 4; r++) {
-        for (size_t s = 0; s < S; s++) {
-          ckpt_v[c * 4 * S + r * S + s] = LogoddMatrix__get(vmatrix, (size_t) r, s);
-        }
-      }
+      memcpy(&ckpt_v[c * 4 * S], vmatrix->v, 4 * S * sizeof(LOGODD_T));
     }
   }
   
@@ -310,6 +402,9 @@ void Viterbi(struct HMM* hmm, size_t num_observations, Literal* observations, si
     free(obs1);
     free(obs2);
     free(obs3);
+    free(has_N);
+    free(emitting_states);
+    free(silent_states);
     die("No valid path found.");
   }
 
@@ -351,12 +446,7 @@ void Viterbi(struct HMM* hmm, size_t num_observations, Literal* observations, si
       long chunk_needed = (long) ((t - 1) / interval);
       if (chunk_needed != current_chunk) {
         current_chunk = chunk_needed;
-        
-        for (int r = 0; r < 4; r++) {
-          for (size_t s = 0; s < S; s++) {
-            LogoddMatrix__set(vmatrix_rerun, (size_t) r, s, ckpt_v[current_chunk * 4 * S + r * S + s]);
-          }
-        }
+        memcpy(vmatrix_rerun->v, &ckpt_v[current_chunk * 4 * S], 4 * S * sizeof(LOGODD_T));
         
         size_t t_start = (size_t)(current_chunk * interval + 1);
         size_t t_end = (size_t)((current_chunk + 1) * interval);
@@ -365,7 +455,7 @@ void Viterbi(struct HMM* hmm, size_t num_observations, Literal* observations, si
         for (size_t t_run = t_start; t_run <= t_end; t_run++) {
           STATE_ID_T* local_row = &local_pmatrix[((t_run - 1) % interval) * S];
           for(size_t s = 0; s < S; s++) local_row[s] = STATE_MAX_ID;
-          Viterbi__step(vmatrix_rerun, local_row, hmm, observations, obs1, obs2, obs3, t_run);
+          Viterbi__step(vmatrix_rerun, local_row, hmm, observations, obs1, obs2, obs3, has_N, emitting_states, num_emitting, silent_states, num_silent, t_run);
         }
       }
       
@@ -373,8 +463,7 @@ void Viterbi(struct HMM* hmm, size_t num_observations, Literal* observations, si
     }
     
     if (prev_id == STATE_MAX_ID || prev_id >= hmm->num_states) {
-        // Unreachable, silently truncate rather than segfault
-        break;
+        die("Traceback error: invalid predecessor state ID " SID " at t=%lu", prev_id, t);
     }
 
     path[i - 1] = &hmm->states[prev_id];
@@ -405,4 +494,7 @@ void Viterbi(struct HMM* hmm, size_t num_observations, Literal* observations, si
   free(obs1);
   free(obs2);
   free(obs3);
+  free(has_N);
+  free(emitting_states);
+  free(silent_states);
 }

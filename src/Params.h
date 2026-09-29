@@ -122,7 +122,7 @@ typedef struct Params {
            e1_e2;
 } Params;  // struct params
 
-bool Params__create(struct Params* self, struct EmissionTable emission_tables[6]);
+bool Params__create(struct Params* self, struct EmissionTable emission_tables[8]);
 void Params__destroy(struct Params* self);
 bool Params__recalculate(struct Params* self);
 bool Params__set_paths(struct Params* self, char *BaseDir);

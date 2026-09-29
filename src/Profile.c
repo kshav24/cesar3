@@ -54,6 +54,7 @@ bool Profile__read(struct Profile* self, char filename[]) {
         break;
       }
     }
+    line[LINELENGTH - 1] = '\0';
 
     size_t i=0;
     size_t line_offset = 0;

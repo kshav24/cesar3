@@ -60,13 +60,13 @@ int main(int argc, char* argv[argc]) {
     /* load acceptor or first codon profile */
     if (reference->acceptor[0] != '\0') {      /* filename is given in the input file */
       char name[STATE_NAME_LENGTH];
-      sprintf(name, "ref%iacc", i);
+      snprintf(name, sizeof(name), "ref%iacc", i);
       acceptors[i] = Profile__create(name);
 
       char fileInsideBinaryLocation[PROFILE_FILENAME_LENGTH];
-      sprintf(fileInsideBinaryLocation, "%s%s/%s", prefix, parameters.clade, reference->acceptor);
+      snprintf(fileInsideBinaryLocation, sizeof(fileInsideBinaryLocation), "%s%s/%s", prefix, parameters.clade, reference->acceptor);
       char pathInsideBinaryLocation[PROFILE_FILENAME_LENGTH];
-      sprintf(pathInsideBinaryLocation, "%s/%s", BaseDir, reference->acceptor);
+      snprintf(pathInsideBinaryLocation, sizeof(pathInsideBinaryLocation), "%s/%s", BaseDir, reference->acceptor);
 		logv(1,"file InsideBin %s pathInsideBin %s\n", fileInsideBinaryLocation, pathInsideBinaryLocation);
 
       /* test whether an absolute or relative path is given. In case of a relative path, test either local directory or the location of the binary */
@@ -108,15 +108,15 @@ int main(int argc, char* argv[argc]) {
     logv(1, "Reference %u uses acceptor:\t%s", i, acceptors[i]->filename);
 
     /* load donor or last codon profile */
-    if (reference->acceptor[0] != '\0') {        /* filename is given in the input file */
+    if (reference->donor[0] != '\0') {        /* filename is given in the input file */
       char name[STATE_NAME_LENGTH];
-      sprintf(name, "ref%idon", i);
+      snprintf(name, sizeof(name), "ref%idon", i);
       donors[i] = Profile__create(name);
 
       char fileInsideBinaryLocation[PROFILE_FILENAME_LENGTH];
-      sprintf(fileInsideBinaryLocation, "%s%s/%s", prefix, parameters.clade, reference->donor);
+      snprintf(fileInsideBinaryLocation, sizeof(fileInsideBinaryLocation), "%s%s/%s", prefix, parameters.clade, reference->donor);
       char pathInsideBinaryLocation[PROFILE_FILENAME_LENGTH];
-      sprintf(pathInsideBinaryLocation, "%s/%s", BaseDir, reference->donor);
+      snprintf(pathInsideBinaryLocation, sizeof(pathInsideBinaryLocation), "%s/%s", BaseDir, reference->donor);
 		logv(1,"file InsideBin %s pathInsideBin %s\n", fileInsideBinaryLocation, pathInsideBinaryLocation);
 
       /* test whether an absolute or relative path is given. In case of a relative path, test either local directory or the location of the binary */

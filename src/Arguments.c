@@ -82,26 +82,34 @@ bool Arguments__read(int argc, char** argv, struct Params* parameters) {
     }
 
     if (!strcmp(argument, "-t") || !strcmp(argument, "--threads")) {
+      if (i + 1 >= argc) die("Option %s requires an argument.", argument);
       parameters->num_threads = atoi(argv[++i]);
       logv(1, "CESAR3: Threads set to %d", parameters->num_threads);
     } else if (!strcmp(argument, "-k") || !strcmp(argument, "--checkpoint-interval")) {
       /* Note: CHECKPOINT_INTERVAL is a compile-time constant in Viterbi.c.
        * This flag documents intent; to change it, recompile with
        * -DCHECKPOINT_INTERVAL=N in CFLAGS. */
+      if (i + 1 >= argc) die("Option %s requires an argument.", argument);
       warn("--checkpoint-interval is a compile-time constant (CHECKPOINT_INTERVAL). "
            "Recompile with -DCHECKPOINT_INTERVAL=%s to change it.", argv[++i]);
     } else if (!strcmp(argument, "-i") || !strcmp(argument, "--split_codon_emissions")) {
+      if (i + 2 >= argc) die("Option %s requires two arguments.", argument);
       Params__set_via_str(parameters, "split_emissions_acceptor", argv[++i]);
       Params__set_via_str(parameters, "split_emissions_donor", argv[++i]);
     } else if (!strcmp(argument, "-x") || !strcmp(argument, "--max-memory")) {
+      if (i + 1 >= argc) die("Option %s requires an argument.", argument);
       Params__set_via_str(parameters, "max_memory", argv[++i]);
     } else if (!strcmp(argument, "-c") || !strcmp(argument, "--clade")) {
+      if (i + 1 >= argc) die("Option %s requires an argument.", argument);
       Params__set_via_str(parameters, "clade", argv[++i]);
     } else if (!strcmp(argument, "-m")  || !strcmp(argument, "--matrix")) {
+      if (i + 1 >= argc) die("Option %s requires an argument.", argument);
       Params__set_via_str(parameters, "eth_file", argv[++i]);
     } else if (!strcmp(argument, "-v")  || !strcmp(argument, "--verbosity")) {
+      if (i + 1 >= argc) die("Option %s requires an argument.", argument);
       g_loglevel = (char) atoi(argv[++i]);
     } else if (!strcmp(argument, "-p")  || !strcmp(argument, "--profiles")) {
+      if (i + 2 >= argc) die("Option %s requires two arguments.", argument);
       Params__set_via_str(parameters, "acc_profile", argv[++i]);
       Params__set_via_str(parameters, "do_profile", argv[++i]);
 		parameters->acc_do_specified = true;
@@ -117,8 +125,12 @@ bool Arguments__read(int argc, char** argv, struct Params* parameters) {
           warn("Ignoring unknown parameter `%s'.", key);
         }
       }
-      i = j;
+      if (j == i + 1) {
+        die("Option %s requires at least one parameter.", argument);
+      }
+      i = j - 1;
     } else if (!strcmp(argument, "-d") || !strcmp(argument, "--dot")) {
+      if (i + 1 >= argc) die("Option %s requires an argument.", argument);
       Params__set_via_str(parameters, "dot", argv[++i]);
     } else if (!strcmp(argument, "-f") || !strcmp(argument, "--firstexon")) {
       parameters->firstexon = true;

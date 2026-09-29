@@ -14,7 +14,7 @@
 
 #define MEMORYLIMIT 16
 
-bool Params__create(struct Params* self, struct EmissionTable emission_tables[6]) {
+bool Params__create(struct Params* self, struct EmissionTable emission_tables[8]) {
   self->dirty = false;
   self->acc_do_specified = false;
   self->firstexon = false;
@@ -338,6 +338,9 @@ bool Params__recalculate(struct Params* self) {
 }
 
 bool Params__set_via_str(struct Params* self, char* string, char* value) {
+  if (!string || !value) {
+    return false;
+  }
   #define STRING_LENGTH 10
   const void* STRING_DICT[STRING_LENGTH][2] = {
     {"clade",                     &self->clade},
@@ -351,7 +354,7 @@ bool Params__set_via_str(struct Params* self, char* string, char* value) {
     {"fasta_file",                &self->fasta_file},
     {"dot",                       &self->dot}
   };
-  #define LODD_LENGTH 26
+  #define LODD_LENGTH 27
   const void* LODD_DICT[LODD_LENGTH][2] = {
     {"fs_prob",                   &self->fs_logodd},
     {"ci_prob",                   &self->ci_logodd},
@@ -363,7 +366,8 @@ bool Params__set_via_str(struct Params* self, char* string, char* value) {
     {"i3_i1_do",                  &self->i3_i1_do},
     {"i3_i1_acc",                 &self->i3_i1_acc},
     {"no_leading_introns_prob",   &self->no_leading_introns_logodd},
-    {"no_trailing_introns_prob",  &self->no_trailing_introns_logodd},  /* CESAR3: fixed typo (was 'no_traling') */
+    {"no_traling_introns_prob",   &self->no_trailing_introns_logodd},  /* CESAR 2.0 backward compatibility */
+    {"no_trailing_introns_prob",  &self->no_trailing_introns_logodd},  /* CESAR 3.0 typo fix */
     {"intron_del",                &self->intron_del},
     {"js_js",                     &self->js_js},
     {"b1_bas",                    &self->b1_bas},
@@ -429,5 +433,8 @@ void Params__destroy(struct Params* self) {
   EmissionTable__destroy(self->emission_table_64_LAMBDA);
   EmissionTable__destroy(self->emission_table_61_LAMBDA);
   EmissionTable__destroy(self->emission_table_61_UNIFORM);
+  EmissionTable__destroy(self->emission_table_start_LAMBDA);
+  EmissionTable__destroy(self->emission_table_stop_LAMBDA);
+  free(self->start_codons);
   free(self->stop_codons);
 }

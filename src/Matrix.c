@@ -192,10 +192,7 @@ bool LogoddMatrix__set(LogoddMatrix* self, size_t column, size_t row, LOGODD_T v
  */
 LOGODD_T LogoddMatrix__get(LogoddMatrix* self, size_t column, size_t row) {
   if (column >= self->num_columns || row >= self->num_rows) {
-    if (self->num_rows > 0) {
-      return Logodd__log(1.0 / self->num_rows);
-    }
-    return LOGODD_NEGINF;
+    die("Invalid matrix access: %lux%lu[%lu][%lu]", self->num_columns, self->num_rows, column, row);
   }
 
   return self->v[self->num_rows * column + row];

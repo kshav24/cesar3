@@ -24,20 +24,27 @@
 extern char g_loglevel;
 
 #define warn(format, ...)\
-  fprintf(stderr, "WARNING! %s:%d %s():\t" format "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__);\
+  do {\
+    fprintf(stderr, "WARNING! %s:%d %s():\t" format "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__);\
+  } while (0)
 
 /** logv prints to stderr if given level exceeds LOGLEVEL
  * http://stackoverflow.com/questions/1644868/c-define-macro-for-debug-printing
  */
-#define logv(level, format, ...) if (level <= g_loglevel)\
-  fprintf(stderr, "VERBOSE%i %s:%d %s():\t" format "\n", level, __FILE__, __LINE__, __func__, ##__VA_ARGS__);\
+#define logv(level, format, ...)\
+  do {\
+    if ((level) <= g_loglevel) {\
+      fprintf(stderr, "VERBOSE%i %s:%d %s():\t" format "\n", (int)(level), __FILE__, __LINE__, __func__, ##__VA_ARGS__);\
+    }\
+  } while (0)
 
 /**
  * Kill the program after printing some information to stderr.
  */
 #define die(format, ...)\
-  fprintf(stderr, "\x1B[31mCRITICAL %s:%d %s():\t\x1B[0m" format "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__); exit(FAIL_EXIT);
-
-
+  do {\
+    fprintf(stderr, "\x1B[31mCRITICAL %s:%d %s():\t\x1B[0m" format "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__);\
+    exit(FAIL_EXIT);\
+  } while (0)
 
 #endif  // LOGGING_H_

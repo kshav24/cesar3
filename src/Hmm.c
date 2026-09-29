@@ -34,6 +34,7 @@ struct HMM* HMM__create(size_t num_states, size_t num_starts, size_t num_ends) {
   self->states = (struct State*) SAFECALLOC(num_states, sizeof(struct State));
   self->num_starts = 0;
   self->max_starts = num_states;
+  self->num_emitting = 0;
 
   return self;
 }

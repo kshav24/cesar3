@@ -6,6 +6,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <queue>
+#include <atomic>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -56,10 +57,11 @@ void print_usage() {
               << "cesar binary auto-detected from same directory as cesar3.\n";
 }
 
-void get_spawn_output(const std::string& bin, const std::string& input_file, const std::vector<std::string>& pt_args, const std::string& err_file, std::string& out_str, std::string& err_str) {
+bool get_spawn_output(const std::string& bin, const std::string& input_file, const std::vector<std::string>& pt_args, const std::string& err_file, std::string& out_str, std::string& err_str, int& exit_code) {
+    exit_code = -1;
     int pipefd[2];
     if (pipe(pipefd) != 0) {
-        return;
+        return false;
     }
 
     posix_spawn_file_actions_t actions;
@@ -83,7 +85,7 @@ void get_spawn_output(const std::string& bin, const std::string& input_file, con
         close(pipefd[0]);
         close(pipefd[1]);
         for (char* p : argv_vec) free(p);
-        return;
+        return false;
     }
 
     posix_spawn_file_actions_destroy(&actions);
@@ -99,6 +101,13 @@ void get_spawn_output(const std::string& bin, const std::string& input_file, con
 
     int status;
     waitpid(pid, &status, 0);
+    if (WIFEXITED(status)) {
+        exit_code = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        exit_code = 128 + WTERMSIG(status);
+    } else {
+        exit_code = -1;
+    }
 
     std::ifstream err_in(err_file);
     if (err_in.is_open()) {
@@ -107,6 +116,8 @@ void get_spawn_output(const std::string& bin, const std::string& input_file, con
             err_str += err_line + "\n";
         }
     }
+
+    return (exit_code == 0);
 }
 
 int main(int argc, char* argv[]) {
@@ -115,57 +126,102 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::string arg1 = argv[1];
-    if (arg1 == "-h" || arg1 == "--help") {
-        print_usage();
-        unsigned int hw_threads = std::thread::hardware_concurrency();
-        int def = hw_threads > 0 ? std::max(1, (int)(0.8 * hw_threads)) : 4;
-        std::cerr << "\nDetected default threads: " << def << "\n";
-        return 0;
+    fs::path bin_dir;
+    std::error_code ec_exe;
+    if (fs::exists("/proc/self/exe", ec_exe)) {
+        bin_dir = fs::canonical("/proc/self/exe", ec_exe).parent_path();
     }
-
-    std::string input_fa = argv[1];
-    
-    fs::path exe_path = argv[0];
-    fs::path bin_dir = exe_path.parent_path();
-    if (bin_dir.empty()) bin_dir = ".";
+    if (bin_dir.empty() || !fs::exists(bin_dir / "cesar", ec_exe)) {
+        fs::path exe_path = argv[0];
+        bin_dir = exe_path.parent_path();
+        if (bin_dir.empty()) bin_dir = ".";
+    }
     std::string cesar_bin = (bin_dir / "cesar").string();
 
+    std::string input_fa = "";
     std::string out_dir = "";
     
     unsigned int hw_threads = std::thread::hardware_concurrency();
     int num_threads = hw_threads > 0 ? std::max(1, (int)(0.8 * hw_threads)) : 4;
+    bool threads_specified = false;
     bool use_shm = true;
     int verbosity = 1;
     std::vector<std::string> passthrough_args;
 
-    for (int i = 2; i < argc; ++i) {
+    for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "-t" || arg == "--threads") {
-            if (i + 1 < argc) {
-                num_threads = std::stoi(argv[++i]);
-            }
-        } else if (arg == "-o" || arg == "--output") {
-            if (i + 1 < argc) {
-                out_dir = argv[++i];
-            }
-        } else if (arg == "--no-shm") {
-            use_shm = false;
-        } else if (arg == "-v" || arg == "--verbosity") {
-            if (i + 1 < argc) {
-                verbosity = std::stoi(argv[i+1]);
-                passthrough_args.push_back(arg);
-                passthrough_args.push_back(argv[++i]);
-            }
-        } else if (arg == "-h" || arg == "--help") {
+        if (arg == "-h" || arg == "--help") {
             print_usage();
-            unsigned int hw_threads = std::thread::hardware_concurrency();
             int def = hw_threads > 0 ? std::max(1, (int)(0.8 * hw_threads)) : 4;
             std::cerr << "\nDetected default threads: " << def << "\n";
             return 0;
-        } else {
+        } else if (arg == "-V" || arg == "--version") {
+            std::cerr << "cesar3 (CESAR 3.0)\n"
+                      << "Copyright 2017 MPI-CBG/MPI-PKS Peter Schwede\n\n"
+                      << "Align a pair of sequences using HMM.\n";
+            return 0;
+        } else if (arg == "-t" || arg == "--threads") {
+            if (i + 1 >= argc) {
+                std::cerr << "ERROR: Option " << arg << " requires an argument.\n";
+                return 1;
+            }
+            num_threads = std::stoi(argv[++i]);
+            threads_specified = true;
+        } else if (arg == "-o" || arg == "--output") {
+            if (i + 1 >= argc) {
+                std::cerr << "ERROR: Option " << arg << " requires an argument.\n";
+                return 1;
+            }
+            out_dir = argv[++i];
+        } else if (arg == "--no-shm") {
+            use_shm = false;
+        } else if (arg == "-v" || arg == "--verbosity") {
+            if (i + 1 >= argc) {
+                std::cerr << "ERROR: Option " << arg << " requires an argument.\n";
+                return 1;
+            }
+            verbosity = std::stoi(argv[++i]);
             passthrough_args.push_back(arg);
+            passthrough_args.push_back(std::to_string(verbosity));
+        } else if (arg == "-p" || arg == "--profiles" || arg == "-i" || arg == "--split_codon_emissions") {
+            if (i + 2 >= argc) {
+                std::cerr << "ERROR: Option " << arg << " requires two arguments.\n";
+                return 1;
+            }
+            passthrough_args.push_back(arg);
+            passthrough_args.push_back(argv[++i]);
+            passthrough_args.push_back(argv[++i]);
+        } else if (arg == "-k" || arg == "--checkpoint-interval" ||
+                   arg == "-x" || arg == "--max-memory" ||
+                   arg == "-c" || arg == "--clade" ||
+                   arg == "-m" || arg == "--matrix" ||
+                   arg == "-d" || arg == "--dot") {
+            if (i + 1 >= argc) {
+                std::cerr << "ERROR: Option " << arg << " requires an argument.\n";
+                return 1;
+            }
+            passthrough_args.push_back(arg);
+            passthrough_args.push_back(argv[++i]);
+        } else if (arg == "-s" || arg == "--set") {
+            passthrough_args.push_back(arg);
+            while (i + 1 < argc && argv[i + 1][0] != '-') {
+                passthrough_args.push_back(argv[++i]);
+            }
+        } else if (arg.rfind("-", 0) == 0) {
+            passthrough_args.push_back(arg);
+        } else {
+            if (!input_fa.empty()) {
+                std::cerr << "ERROR: Too many input files given, e.g.: " << arg << "\n";
+                return 1;
+            }
+            input_fa = arg;
         }
+    }
+
+    if (input_fa.empty()) {
+        std::cerr << "ERROR: Insufficient arguments. Please provide at least an input file.\n";
+        print_usage();
+        return 1;
     }
 
     std::ifstream in(input_fa);
@@ -208,6 +264,26 @@ int main(int argc, char* argv[]) {
         species_names.push_back(current_species.substr(1, end_pos - 1));
     }
 
+    if (!in_species) {
+        // No #### separator: single gene/alignment mode, delegate directly to cesar_bin
+        std::vector<char*> exec_argv;
+        exec_argv.push_back(strdup(cesar_bin.c_str()));
+        exec_argv.push_back(strdup(input_fa.c_str()));
+        if (threads_specified) {
+            exec_argv.push_back(strdup("-t"));
+            exec_argv.push_back(strdup(std::to_string(num_threads).c_str()));
+        }
+        for (const auto& a : passthrough_args) {
+            exec_argv.push_back(strdup(a.c_str()));
+        }
+        exec_argv.push_back(nullptr);
+        
+        execv(cesar_bin.c_str(), exec_argv.data());
+        std::cerr << "ERROR: execv failed for single species mode (" << cesar_bin << ").\n";
+        for (char* p : exec_argv) free(p);
+        return 1;
+    }
+
     int species_count = species_blocks.size();
 
     if (species_count == 0) {
@@ -219,13 +295,17 @@ int main(int argc, char* argv[]) {
         std::vector<char*> exec_argv;
         exec_argv.push_back(strdup(cesar_bin.c_str()));
         exec_argv.push_back(strdup(input_fa.c_str()));
+        if (threads_specified) {
+            exec_argv.push_back(strdup("-t"));
+            exec_argv.push_back(strdup(std::to_string(num_threads).c_str()));
+        }
         for (const auto& a : passthrough_args) {
             exec_argv.push_back(strdup(a.c_str()));
         }
         exec_argv.push_back(nullptr);
         
         execv(cesar_bin.c_str(), exec_argv.data());
-        std::cerr << "ERROR: execv failed for single species mode.\n";
+        std::cerr << "ERROR: execv failed for single species mode (" << cesar_bin << ").\n";
         for (char* p : exec_argv) free(p);
         return 1;
     }
@@ -263,9 +343,13 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> warned_species;
     std::mutex cerr_mtx;
     int completed = 0;
+    std::atomic<bool> failed{false};
+    std::atomic<int> failure_code{0};
 
     auto worker = [&]() {
         while (true) {
+            if (failed.load(std::memory_order_relaxed)) break;
+
             int job_id;
             {
                 std::lock_guard<std::mutex> lock(q_mtx);
@@ -282,7 +366,22 @@ int main(int argc, char* argv[]) {
             }
 
             std::string out_str, err_str;
-            get_spawn_output(cesar_bin, sp_file, passthrough_args, err_file, out_str, err_str);
+            int child_exit_code = 0;
+            bool ok = get_spawn_output(cesar_bin, sp_file, passthrough_args, err_file, out_str, err_str, child_exit_code);
+
+            if (!ok || child_exit_code != 0) {
+                std::lock_guard<std::mutex> lock(cerr_mtx);
+                if (!failed.exchange(true)) {
+                    failure_code.store(child_exit_code != 0 ? child_exit_code : 1);
+                }
+                std::cerr << "ERROR: Alignment failed for species [" << species_names[job_id] << "] (exit code " << child_exit_code << "):\n";
+                if (!err_str.empty()) {
+                    std::cerr << err_str;
+                    if (err_str.back() != '\n') std::cerr << "\n";
+                }
+                break;
+            }
+
             results[job_id] = std::move(out_str);
 
             {
@@ -292,9 +391,10 @@ int main(int argc, char* argv[]) {
                     std::cerr << "[INFO] species " << completed << "/" << species_count << " done\n";
                 }
                 if (!err_str.empty()) {
-                    if (verbosity == 1) {
+                    if (err_str.find("N literal found") != std::string::npos) {
                         warned_species.push_back(species_names[job_id]);
-                    } else if (verbosity >= 2) {
+                    }
+                    if (verbosity >= 2) {
                         size_t start = 0;
                         size_t end;
                         while ((end = err_str.find('\n', start)) != std::string::npos) {
@@ -316,6 +416,11 @@ int main(int argc, char* argv[]) {
     }
     for (auto& w : workers) {
          w.join();
+    }
+
+    if (failed.load()) {
+        fs::remove_all(shm_dir, ec);
+        return failure_code.load();
     }
 
     if (verbosity == 1 && !warned_species.empty()) {

@@ -33,28 +33,6 @@ LOGODD_T Logodd__exp(LOGODD_T input) {
   return exp(input);
 }
 
-/**
- * Compute the sum of two log odds.
- * This method absorbs LOGODD_NEGINF, meaning that the sum of any value to
- * LOGODD_NEGINF will result in LOGODD_NEGINF.
- * @param a a log odd.
- * @param b a log odd.
- * @return the sum of a and b.
- */
-LOGODD_T Logodd__add(LOGODD_T a, LOGODD_T b) {
-  if (isnan(a)) {
-    die("a is NAN");
-  } else if (isnan(b)) {
-    die("b is NAN");
-  }
-  if (a == LOGODD_NEGINF) {
-    return LOGODD_NEGINF;
-  }
-  if (b == LOGODD_NEGINF) {
-    return LOGODD_NEGINF;
-  }
-  return a + b;
-}
 
 
 /**

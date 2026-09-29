@@ -14,9 +14,29 @@
 #define LOGODD_T double
 #define LOGODD_NEGINF -DBL_MAX
 
+#include <math.h>
+
+#ifdef DEBUG
+#include "Logging.h"
+#endif
+
 LOGODD_T Logodd__log(LOGODD_T input);
 LOGODD_T Logodd__exp(LOGODD_T input);
-LOGODD_T Logodd__add(LOGODD_T summand, LOGODD_T addend);
+
+static inline LOGODD_T Logodd__add(LOGODD_T a, LOGODD_T b) {
+#ifdef DEBUG
+  if (isnan(a)) {
+    die("a is NAN");
+  } else if (isnan(b)) {
+    die("b is NAN");
+  }
+#endif
+  if (a == LOGODD_NEGINF || b == LOGODD_NEGINF) {
+    return LOGODD_NEGINF;
+  }
+  return a + b;
+}
+
 LOGODD_T Logodd__sumexp(LOGODD_T a, LOGODD_T b);
 LOGODD_T Logodd__subexp(LOGODD_T a, LOGODD_T b);
 

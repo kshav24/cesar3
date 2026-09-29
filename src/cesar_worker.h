@@ -16,11 +16,6 @@ extern "C" {
  */
 void cesar_align_all_queries(struct HMM* hmm, struct Fasta* fasta, struct Params* params, int num_threads);
 
-/*
- * Batch file runner for a list of FASTA files.
- */
-void cesar_worker_run(const char* jobs_file, int num_threads);
-
 #ifdef __cplusplus
 }
 #endif
