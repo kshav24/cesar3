@@ -25,6 +25,7 @@ typedef struct State {
   uint16_t num_emissions;
   Literal reference[STATE_MAX_REF_LEN];
   uint16_t reference_uint;
+  bool ref_has_N;
   uint16_t num_incoming;
   struct Transition incoming[STATE_MAX_NUM_INCOMING];
   STATE_CUSTOM_T custom;

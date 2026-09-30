@@ -38,7 +38,8 @@ bool State__init(struct State* self, char name[STATE_NAME_LENGTH], uint16_t num_
   for (uint16_t i=0; i < num_emissions; i++) {
     self->reference[i] = emission_reference[i];
   }
-  self->reference_uint = num_emissions > 0 ? Literal__uint(num_emissions, emission_reference) : 0;
+  self->ref_has_N = Literal__Ns(num_emissions, emission_reference) > 0;
+  self->reference_uint = (num_emissions > 0 && !self->ref_has_N) ? Literal__uint(num_emissions, emission_reference) : 0;
   self->emission_table = emission_table;
 
   // Die if emission table does not allow the state to emit its reference.

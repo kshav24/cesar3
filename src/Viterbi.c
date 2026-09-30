@@ -56,7 +56,7 @@ LOGODD_T Viterbi__get_emission_logodd(uint16_t* obs1, uint16_t* obs2, uint16_t* 
       break;
     }
   }
-  if (__builtin_expect(window_has_N, 0)) {
+  if (__builtin_expect(window_has_N || state->ref_has_N, 0)) {
     return EmissionTable__by_literals(state->emission_table, state->reference, &observations[t - state->num_emissions]);
   }
 
@@ -308,13 +308,8 @@ void Viterbi(struct HMM* hmm, size_t num_observations, Literal* observations, si
   if (!has_N) {
     die("Failed to allocate has_N in Viterbi.");
   }
-  bool warned_n = false;
   for (size_t t = 0; t < num_observations; t++) {
     has_N[t] = (observations[t] == LITERAL_N);
-    if (has_N[t] && !warned_n) {
-      warn("N literal found.");
-      warned_n = true;
-    }
   }
   has_N[num_observations] = false;
 
