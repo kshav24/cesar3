@@ -91,7 +91,7 @@ bool EmissionTable__read(struct EmissionTable* self, char* filename) {
         free(codon);
 
         if (index != expected) {
-          die("Unsupported order of oligomers found in %s:%lu: Expected %lu, got %u (%s)", filename, lineno+1, expected, index, token);
+          die("Unsupported order of oligomers found in %s:%lu: Expected %lu, got %lu (%s)", filename, lineno+1, expected, (unsigned long) index, token);
         }
       } else {
         double prob;
@@ -190,7 +190,7 @@ LOGODD_T EmissionTable__by_literals(struct EmissionTable* self, Literal referenc
       char qry[5] = "";
       Literal__str(self->num_literals, reference, ref);
       Literal__str(self->num_literals, query, qry);
-      logv(7, "    by literals: qry=%s=%i x ref=%s=%i", qry, column, ref, row);
+      logv(7, "    by literals: qry=%s=%lu x ref=%s=%lu", qry, (unsigned long) column, ref, (unsigned long) row);
     }
 
     return EmissionTable__get(self, column, row);
@@ -220,7 +220,7 @@ LOGODD_T EmissionTable__by_literals(struct EmissionTable* self, Literal referenc
 
       query_visits++;
       sum += Logodd__exp(EmissionTable__get(self, column, row));
-      logv(7, "Visit: %02x", column);
+      logv(7, "Visit: %02x", (unsigned int) column);
     }
     
     free(visited_query);

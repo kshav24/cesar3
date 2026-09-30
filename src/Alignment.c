@@ -56,7 +56,7 @@ bool find_best_deletion(struct State* deletion, struct EmissionTable* emission_t
           Literal__char(lookup_query[0]), Literal__char(lookup_query[1]), Literal__char(lookup_query[2]),
           Literal__char(reference[0]), Literal__char(reference[1]),
           Literal__char(query[0]), Literal__char(query[1]),
-          prob, highest_prob, result, best_pos
+          prob, highest_prob, result, (unsigned int) best_pos
           );
     }
     return true;
@@ -79,7 +79,7 @@ bool find_best_deletion(struct State* deletion, struct EmissionTable* emission_t
           Literal__char(lookup_query[0]), Literal__char(lookup_query[1]), Literal__char(lookup_query[2]),
           Literal__char(reference[0]),Literal__char(reference[1]),Literal__char(reference[2]),
           Literal__char(query[0]),
-          prob, highest_prob, result, best_pos
+          prob, highest_prob, result, (unsigned int) best_pos
           );
     }
     result[best_pos] = Literal__char(query[0]);

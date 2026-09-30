@@ -418,7 +418,7 @@ bool Params__set_via_str(struct Params* self, char* string, char* value) {
       int ii = 0;
       sscanf(value, "%d", &ii);
       *((size_t*) INT_DICT[i][1]) = (size_t) ii;
-      logv(1, "Setting %s := %u", string, *((size_t*) INT_DICT[i][1]));
+      logv(1, "Setting %s := %zu", string, *((size_t*) INT_DICT[i][1]));
       return true;
     }
   }

@@ -89,7 +89,7 @@ bool State__init_silent(struct State* self, char name[STATE_NAME_LENGTH]) {
  * @return success boolean.
  */
 bool State__add_incoming(struct State* self, LOGODD_T logodd, struct State* target) {
-  if(target->num_incoming > STATE_MAX_NUM_INCOMING) {
+  if(target->num_incoming >= STATE_MAX_NUM_INCOMING) {
     die("Too many incoming transitions for state %s ("SID").", target->name, target->id);
   }
   logv(5, "State incoming:\t%s--(%f)-->%s", self->name, Logodd__exp(logodd), target->name);

@@ -110,10 +110,10 @@ void Viterbi__step(struct LogoddMatrix* vmatrix,
       if (g_loglevel > 5) {
         Literal__str(state->num_emissions, state->reference, ref);
         Literal__str(state->num_emissions, &observations[t-state->num_emissions], qry);
-        logv(6, "t=%lu\ti=%s="SID"\tqry=%s=%i\tref=%s=%i\temission_logodd=%E",
+        logv(6, "t=%lu\ti=%s="SID"\tqry=%s=%lu\tref=%s=%lu\temission_logodd=%E",
             t, state->name, i,
-            qry, Literal__uint(state->num_emissions, &observations[t-state->num_emissions]),
-            ref, Literal__uint(state->num_emissions, state->reference),
+            qry, (unsigned long) Literal__uint(state->num_emissions, &observations[t-state->num_emissions]),
+            ref, (unsigned long) Literal__uint(state->num_emissions, state->reference),
             emission_logodd);
       }
 

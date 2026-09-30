@@ -178,9 +178,16 @@ int main(int argc, char* argv[argc]) {
     }
   }
 
+#ifdef CHECKPOINT_INTERVAL
+  size_t interval = CHECKPOINT_INTERVAL;
+#else
+  size_t interval = 256;
+#endif
+  size_t num_checkpoints = (qlength_max / interval) + 1;
   double mem = 
      (num_states * 4 * sizeof(double))                     +   /* Viterbi logodds vmatrix, double has typically 8 bytes */
-     (num_states * qlength_max * sizeof(uint32_t))         +   /* Viterbi path matrix, uint32 = 4 bytes*/
+     (num_checkpoints * 4 * num_states * sizeof(double))   +   /* Viterbi checkpoint logodds slices */
+     (interval * num_states * sizeof(uint32_t))            +   /* Viterbi local traceback chunk */
      (num_states * sizeof(State))                          +   /* Space for all the state structures, each 304 bytes for a struct State */
 	  ((2 * qlength_max + rlength) * sizeof(struct State*)) +   /* Space for Viterbi path, 8 bytes for a pointer on a 64 bit system */
 	  ((qlength_max + rlength) * 2 * sizeof(char))          +   /* Space for the aligned seqs */

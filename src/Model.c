@@ -42,7 +42,8 @@ bool create_profile_chain(struct HMM* hmm, struct Profile* profile, struct State
     
     if (i == 0) {
       *start = current_state;
-    } else if (i >= profile->length-1) {
+    }
+    if (i >= profile->length-1) {
       *end = current_state;
     }
 
@@ -240,8 +241,8 @@ struct HMM* multi_exon(struct Params* params, struct Fasta* fasta, struct Profil
         for(uint16_t j = 0; j < params->num_stop_codons; j++) {
           match = true;
           for(uint16_t k = 0; k < 3; k++) {
-            logv(1, "reference[%i]->sequence[%i-3-%i] == params->stop-codons[3*%i+%i]: %c == %c", i,
-                reference->num_codon_bases, k, j, k,
+            logv(1, "reference[%i]->sequence[%zu-3-%i] == params->stop-codons[3*%i+%i]: %c == %c", (int) i,
+                reference->num_codon_bases, (int) k, (int) j, (int) k,
                 Literal__char(reference->sequence[reference->start_split_length+reference->end_split_length+reference->num_codon_bases-3+k]),
                 Literal__char(params->stop_codons[3*j+k]));
             match &= reference->sequence[reference->start_split_length+reference->end_split_length+reference->num_codon_bases-3+k] == params->stop_codons[3*j+k];
@@ -367,7 +368,7 @@ struct HMM* multi_exon(struct Params* params, struct Fasta* fasta, struct Profil
           State__init_uniform(split_codon_donor, "split_codon_donor", 2, params->emission_table_16_UNIFORM);
           break;
         default:
-          die("Invalid number of split codon nucleotides in file %s: %u", params->fasta_file, params->split_emissions_donor);
+          die("Invalid number of split codon nucleotides in file %s: %zu", params->fasta_file, params->split_emissions_donor);
       }
     }
     State__add_incoming(end_last_codon,        params->js_scd,     split_codon_donor);
@@ -431,13 +432,13 @@ struct HMM* multi_exon(struct Params* params, struct Fasta* fasta, struct Profil
       t.logodd = params->do2_e2;
       HMM__set_end(hmm, t);
     }
-
-    if(params->dirty) {
-      for(STATE_ID_T i=0; i < hmm->num_states; i++) {
-        HMM__normalize(hmm, &hmm->states[i]);
-      }
-    }
   } // end for
+
+  if(params->dirty) {
+    for(STATE_ID_T s=0; s < hmm->num_states; s++) {
+      HMM__normalize(hmm, &hmm->states[s]);
+    }
+  }
 
 #if !NONORMALIZE
   for (uint16_t i=1; i+1 < num_split_codons; i+=2) {

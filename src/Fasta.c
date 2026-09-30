@@ -157,7 +157,9 @@ bool Fasta__read(struct Fasta* self, char* filename) {
           state = 2;
           break;
         }
-        sequence->name[name_length++] = c;
+        if (name_length < SEQUENCENAMELENGTH - 1) {
+          sequence->name[name_length++] = c;
+        }
         break;
 
       case 11:  // reading acceptor profile file name
@@ -168,7 +170,9 @@ bool Fasta__read(struct Fasta* self, char* filename) {
           state = 12;
           break;
         }
-        sequence->acceptor[acc_length++] = c;
+        if (acc_length < PROFILE_FILENAME_LENGTH - 1) {
+          sequence->acceptor[acc_length++] = c;
+        }
         break;
 
       case 12:  // reading donor profile file name
@@ -179,7 +183,9 @@ bool Fasta__read(struct Fasta* self, char* filename) {
           state = 2;
           break;
         }
-        sequence->donor[do_length++] = c;
+        if (do_length < PROFILE_FILENAME_LENGTH - 1) {
+          sequence->donor[do_length++] = c;
+        }
         break;
 
       case 13:  // between references and query

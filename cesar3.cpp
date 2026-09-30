@@ -331,8 +331,6 @@ int main(int argc, char* argv[]) {
     std::error_code ec;
     fs::create_directories(shm_dir, ec);
 
-    fs::copy_file(input_fa, shm_dir + "/input.fa", fs::copy_options::overwrite_existing, ec);
-
     std::mutex q_mtx;
     std::queue<int> job_queue;
     for (int i = 0; i < species_count; ++i) {
