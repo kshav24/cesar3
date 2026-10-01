@@ -5,7 +5,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BASELINE_DIR="/home/keshav/cesar_baseline"
+
+# The binary under test (CESAR 3.0).
 BIN="${REPO_DIR}/cesar"
+
+# The reference (CESAR 2.0) binary. Baselines MUST be produced by this, never by
+# ${BIN} -- generating them with the binary under test only proves determinism,
+# not parity, and would silently bless any regression.
+BASELINE_BIN="${BASELINE_CESAR2:-/home/keshav/CESAR2.0/cesar}"
 
 TEST_FILES=(
     "extra/example1.fa"
@@ -21,12 +28,18 @@ MODE="${1:-verify}" # "generate" or "verify"
 
 if [ "${MODE}" = "generate" ]; then
     echo "=== GENERATING BASELINE OUTPUTS in ${BASELINE_DIR} ==="
+    echo "=== reference binary: ${BASELINE_BIN} ==="
+    if [ ! -x "${BASELINE_BIN}" ]; then
+        echo "ERROR: reference (CESAR 2.0) binary not found or not executable: ${BASELINE_BIN}"
+        echo "       Set BASELINE_CESAR2=/path/to/cesar and re-run."
+        exit 1
+    fi
     for tf in "${TEST_FILES[@]}"; do
         base_name="$(basename "${tf}")"
         out_file="${BASELINE_DIR}/${base_name}.out"
         echo -n "Running ${tf} -> ${out_file} ... "
         START_TIME=$(date +%s%N)
-        "${BIN}" "${REPO_DIR}/${tf}" > "${out_file}"
+        "${BASELINE_BIN}" "${REPO_DIR}/${tf}" > "${out_file}"
         END_TIME=$(date +%s%N)
         ELAPSED=$(( (END_TIME - START_TIME) / 1000000 ))
         echo "DONE (${ELAPSED} ms, $(wc -l < "${out_file}") lines)"

@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
+#include <unistd.h>
 
 #include "EmissionTable.h"
 #include "Logging.h"
@@ -12,7 +13,54 @@
 
 #include "Params.h"
 
-#define MEMORYLIMIT 16
+/* Fraction of total system memory usable by default. The remaining 20% keeps
+ * room for the OS, the file cache and the other concurrent worker processes. */
+#define MEMORY_FRACTION 0.80
+
+/* Fallback if the system memory cannot be determined (e.g. exotic platforms). */
+#define MEMORYLIMIT_FALLBACK 16
+
+/**
+ * Total physical memory of the machine in GB (0.0 if it cannot be determined).
+ */
+double Params__system_memory_gb(void) {
+  /* Prefer MemTotal from /proc/meminfo: it is the memory actually available to
+   * userspace. sysconf(_SC_PHYS_PAGES) reports raw physical RAM including
+   * kernel, firmware and I/O-memory reservations, which would make this cap
+   * too optimistic -- exactly the wrong direction for an OOM guard. */
+  FILE* meminfo = fopen("/proc/meminfo", "r");
+  if (meminfo != NULL) {
+    char line[256];
+    while (fgets(line, sizeof(line), meminfo) != NULL) {
+      long kb = 0;
+      if (sscanf(line, "MemTotal: %ld kB", &kb) == 1 && kb > 0) {
+        fclose(meminfo);
+        return ((double)kb * 1024.0) / 1000000000.0;
+      }
+    }
+    fclose(meminfo);
+  }
+
+  /* Fallback for platforms without /proc/meminfo. */
+  long pages = sysconf(_SC_PHYS_PAGES);
+  long page_size = sysconf(_SC_PAGESIZE);
+  if (pages <= 0 || page_size <= 0) {
+    return 0.0;
+  }
+  return ((double)pages * (double)page_size) / 1000000000.0;
+}
+
+/**
+ * Default memory cap: MEMORY_FRACTION of the system memory, falling back to
+ * MEMORYLIMIT_FALLBACK GB when the system memory is unknown.
+ */
+double Params__default_max_memory_gb(void) {
+  double sysmem_gb = Params__system_memory_gb();
+  if (sysmem_gb <= 0.0) {
+    return (double)MEMORYLIMIT_FALLBACK;
+  }
+  return sysmem_gb * MEMORY_FRACTION;
+}
 
 bool Params__create(struct Params* self, struct EmissionTable emission_tables[8]) {
   self->dirty = false;
@@ -20,7 +68,7 @@ bool Params__create(struct Params* self, struct EmissionTable emission_tables[8]
   self->firstexon = false;
   self->lastexon = false;
   self->sanityChecks = false;
-  self->max_memory = MEMORYLIMIT;
+  self->max_memory = (size_t)(Params__default_max_memory_gb() + 0.5);
   self->num_threads = 0;
 
   self->num_start_codons = 1;
@@ -415,9 +463,13 @@ bool Params__set_via_str(struct Params* self, char* string, char* value) {
   // assume value is a int
   for (int i=0; i < INT_LENGTH; i++) {
     if (!strcmp(INT_DICT[i][0], string)) {
-      int ii = 0;
-      sscanf(value, "%d", &ii);
-      *((size_t*) INT_DICT[i][1]) = (size_t) ii;
+      /* Parse as double so fractional GB works and large (RAM-derived) values
+       * do not overflow an int intermediate. */
+      double dd = 0.0;
+      if (sscanf(value, "%lf", &dd) != 1 || dd < 0.0) {
+        return false;
+      }
+      *((size_t*) INT_DICT[i][1]) = (size_t)(dd + 0.5);
       logv(1, "Setting %s := %zu", string, *((size_t*) INT_DICT[i][1]));
       return true;
     }

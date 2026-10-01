@@ -123,6 +123,12 @@ typedef struct Params {
 } Params;  // struct params
 
 bool Params__create(struct Params* self, struct EmissionTable emission_tables[8]);
+
+/* Total physical system memory in GB (0.0 if it cannot be determined). */
+double Params__system_memory_gb(void);
+
+/* Default memory cap in GB: 80% of system memory, with a 16 GB fallback. */
+double Params__default_max_memory_gb(void);
 void Params__destroy(struct Params* self);
 bool Params__recalculate(struct Params* self);
 bool Params__set_paths(struct Params* self, char *BaseDir);

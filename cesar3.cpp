@@ -4,7 +4,6 @@
 #include <string>
 #include <thread>
 #include <mutex>
-#include <condition_variable>
 #include <queue>
 #include <atomic>
 #include <spawn.h>
@@ -15,6 +14,7 @@
 #include <cstring>
 #include <csignal>
 #include <algorithm>
+#include <cstdio>
 #include <fcntl.h>
 namespace fs = std::filesystem;
 
@@ -144,6 +144,7 @@ int main(int argc, char* argv[]) {
     unsigned int hw_threads = std::thread::hardware_concurrency();
     int num_threads = hw_threads > 0 ? std::max(1, (int)(0.8 * hw_threads)) : 4;
     bool threads_specified = false;
+    bool maxmem_specified = false;
     bool use_shm = true;
     int verbosity = 1;
     std::vector<std::string> passthrough_args;
@@ -200,6 +201,7 @@ int main(int argc, char* argv[]) {
                 std::cerr << "ERROR: Option " << arg << " requires an argument.\n";
                 return 1;
             }
+            if (arg == "-x" || arg == "--max-memory") maxmem_specified = true;
             passthrough_args.push_back(arg);
             passthrough_args.push_back(argv[++i]);
         } else if (arg == "-s" || arg == "--set") {
@@ -315,6 +317,47 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    /* Every child process gets its own copy of the HMM and runs its own
+     * Viterbi, so N concurrent children need N times the memory of one. Give
+     * each child an equal share of the 80% budget unless the user set -x.
+     * _SC_PHYS_PAGES / _SC_PAGESIZE are the POSIX sysconf(3) constants. */
+    int concurrent = std::min(num_threads, species_count);
+    if (concurrent < 1) concurrent = 1;
+    std::vector<std::string> child_args = passthrough_args;
+    if (!maxmem_specified) {
+        /* Use MemTotal, matching the cesar binary: that is the memory actually
+         * available to userspace. Raw physical RAM (sysconf) is too optimistic
+         * for an OOM guard. */
+        double sys_gb = 0.0;
+        {
+            std::ifstream meminfo("/proc/meminfo");
+            std::string line;
+            while (std::getline(meminfo, line)) {
+                long kb = 0;
+                if (std::sscanf(line.c_str(), "MemTotal: %ld kB", &kb) == 1 && kb > 0) {
+                    sys_gb = ((double)kb * 1024.0) / 1e9;
+                    break;
+                }
+            }
+        }
+        if (sys_gb <= 0.0) {
+            long pages = sysconf(_SC_PHYS_PAGES);
+            long page_size = sysconf(_SC_PAGESIZE);
+            if (pages > 0 && page_size > 0) {
+                sys_gb = ((double)pages * (double)page_size) / 1e9;
+            }
+        }
+        if (sys_gb > 0.0) {
+            double per_child_gb = (sys_gb * 0.80) / (double)concurrent;
+            if (per_child_gb < 0.1) per_child_gb = 0.1;
+            child_args.push_back("-x");
+            child_args.push_back(std::to_string(per_child_gb));
+            std::cerr << "[INFO] per-process memory cap: " << per_child_gb
+                      << " GB (80% of " << sys_gb << " GB system memory / "
+                      << concurrent << " concurrent processes)\n";
+        }
+    }
+
     std::cerr << "[INFO] " << fs::path(input_fa).filename().string() << ": " << species_count << " species, " << num_threads << " threads\n";
 
     std::signal(SIGINT, signal_handler);
@@ -365,7 +408,7 @@ int main(int argc, char* argv[]) {
 
             std::string out_str, err_str;
             int child_exit_code = 0;
-            bool ok = get_spawn_output(cesar_bin, sp_file, passthrough_args, err_file, out_str, err_str, child_exit_code);
+            bool ok = get_spawn_output(cesar_bin, sp_file, child_args, err_file, out_str, err_str, child_exit_code);
 
             if (!ok || child_exit_code != 0) {
                 std::lock_guard<std::mutex> lock(cerr_mtx);

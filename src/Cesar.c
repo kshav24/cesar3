@@ -184,22 +184,35 @@ int main(int argc, char* argv[argc]) {
   size_t interval = 256;
 #endif
   size_t num_checkpoints = (qlength_max / interval) + 1;
-  double mem = 
-     (num_states * 4 * sizeof(double))                     +   /* Viterbi logodds vmatrix, double has typically 8 bytes */
-     (num_checkpoints * 4 * num_states * sizeof(double))   +   /* Viterbi checkpoint logodds slices */
-     (interval * num_states * sizeof(uint32_t))            +   /* Viterbi local traceback chunk */
+
+  /* Memory that exists once per process no matter how many queries run at the
+   * same time: the HMM itself, the parsed sequences and the small tables. */
+  double mem_shared =
      (num_states * sizeof(State))                          +   /* Space for all the state structures, each 304 bytes for a struct State */
-	  ((2 * qlength_max + rlength) * sizeof(struct State*)) +   /* Space for Viterbi path, 8 bytes for a pointer on a 64 bit system */
-	  ((qlength_max + rlength) * 2 * sizeof(char))          +   /* Space for the aligned seqs */
 	  ((qlength_max + rlength) * 1)                         +   /* Space to store all the sequences */
 	  3000000;                                                  /* need some smaller emission tables (32 k) and other small stuff. 
                                                                        Tests have shown that we may underestimate the real memory by up to 2 Mb. Therefore, be conservative. */
-  mem = mem/1000000000;  /* in GB */	  
-  logv(1, "Expecting a memory consumption of: %f GB (max_memory %f)", mem, (double)parameters.max_memory);
+
+  /* Memory that every concurrent worker needs for itself: each worker runs its
+   * own Viterbi, with its own vmatrix, checkpoints, traceback chunk and path. */
+  double mem_per_worker =
+     (num_states * 4 * sizeof(double))                     +   /* Viterbi logodds vmatrix, double has typically 8 bytes */
+     (num_checkpoints * 4 * num_states * sizeof(double))   +   /* Viterbi checkpoint logodds slices */
+     (interval * num_states * sizeof(uint32_t))            +   /* Viterbi local traceback chunk */
+	  ((2 * qlength_max + rlength) * sizeof(struct State*)) +   /* Space for Viterbi path, 8 bytes for a pointer on a 64 bit system */
+	  ((qlength_max + rlength) * 2 * sizeof(char));             /* Space for the aligned seqs */
+
+  /* The workers are real threads inside this process and really do hold all of
+   * that simultaneously, so the check has to account for them. Use the same
+   * helper that cesar_align_all_queries() uses, so the two cannot disagree. */
+  int num_workers = cesar_worker__effective_threads(parameters.num_threads, fasta.num_queries);
+  double mem = (mem_shared + mem_per_worker * (double)num_workers) / 1000000000.0;  /* in GB */
+  logv(1, "Expecting a memory consumption of: %f GB (%d concurrent worker(s), max_memory %f)", mem, num_workers, (double)parameters.max_memory);
   if (mem > (double)parameters.max_memory) {
-    die("The memory consumption is limited to %1.4f GB by default. Your attempt requires %1.4f GB. You can change the limit via --max-memory.", (double)parameters.max_memory, mem);
+    die("The memory consumption is limited to %1.4f GB. Your attempt requires %1.4f GB (%d concurrent worker(s) needing %1.4f GB each, plus %1.4f GB shared).\nYou can change the limit via --max-memory, or cap each process with -x when running several species in parallel.",
+        (double)parameters.max_memory, mem, num_workers, mem_per_worker/1000000000.0, mem_shared/1000000000.0);
   } else {
-    logv(1, "Expecting a memory consumption of: %1.4f GB", mem);
+    logv(1, "Expecting a memory consumption of: %1.4f GB (%d concurrent worker(s))", mem, num_workers);
   }
 
 

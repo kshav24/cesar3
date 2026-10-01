@@ -13,6 +13,13 @@
 
 #include "Hmm.h"
 
+/* Upper bound on how many outgoing transitions a single state may have.
+ * STATE_MAX_NUM_INCOMING (15) bounds the *incoming* side only; a state can be
+ * the origin of more edges than that, and codon states really do reach ~15 via
+ * the forward-deletion edges. 64 leaves ample headroom while still turning a
+ * would-be stack smash into a loud, diagnosable failure. */
+#define HMM_MAX_OUTGOING 64
+
 /**
  * Create an empty Hidden Markov Model.
  * @param num_states the number of states.
@@ -34,7 +41,6 @@ struct HMM* HMM__create(size_t num_states, size_t num_starts, size_t num_ends) {
   self->states = (struct State*) SAFECALLOC(num_states, sizeof(struct State));
   self->num_starts = 0;
   self->max_starts = num_states;
-  self->num_emitting = 0;
 
   return self;
 }
@@ -145,8 +151,8 @@ bool HMM__dot(struct HMM* self, FILE * file) {
 bool HMM__normalize(struct HMM* hmm, struct State* left) {
   // gather all outgoing edges that leave the left state
   uint16_t num_outgoing = 0;
-  struct Transition* outgoing[15];
-  struct State* rights[15];
+  struct Transition* outgoing[HMM_MAX_OUTGOING];
+  struct State* rights[HMM_MAX_OUTGOING];
 
   for (size_t j=0; j < hmm->num_states; j++) {
     struct State* right = &hmm->states[j];
@@ -155,6 +161,9 @@ bool HMM__normalize(struct HMM* hmm, struct State* left) {
       struct Transition* transition = &right->incoming[k];
 
       if (transition->origin == left->id) {
+        if (num_outgoing >= HMM_MAX_OUTGOING) {
+          die("Too many outgoing transitions for state %s (more than %u).", left->name, HMM_MAX_OUTGOING);
+        }
         rights[num_outgoing] = right;
         outgoing[num_outgoing++] = transition;
       }
@@ -163,6 +172,9 @@ bool HMM__normalize(struct HMM* hmm, struct State* left) {
   for (size_t k=0; k < hmm->num_ends; k++) {
     struct Transition* transition = &hmm->ends[k];
     if (transition->origin == left->id) {
+      if (num_outgoing >= HMM_MAX_OUTGOING) {
+        die("Too many outgoing transitions for state %s (more than %u).", left->name, HMM_MAX_OUTGOING);
+      }
       rights[num_outgoing] = NULL;
       outgoing[num_outgoing++] = transition;
     }

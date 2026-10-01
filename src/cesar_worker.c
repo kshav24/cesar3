@@ -7,10 +7,8 @@
 
 #include "cesar_worker.h"
 #include "Viterbi.h"
-#include "Viterbi_fast.h"
 #include "Alignment.h"
 #include "SafeAlloc.h"
-#include "Logging.h"
 
 typedef struct {
     char* ref_aln;
@@ -22,7 +20,10 @@ typedef struct {
     struct Fasta* fasta;
     struct Params* params;
     QueryResult* results;
-    _Atomic size_t next_q;
+    /* Claimed only through __atomic_fetch_add(), so no _Atomic qualifier is
+     * needed here; mixing C11 _Atomic with the GCC __atomic builtins confuses
+     * type checkers. Plain size_t + builtin is the idiomatic GCC form. */
+    size_t next_q;
     size_t num_queries;
 } MultiQueryContext;
 
@@ -57,17 +58,23 @@ static void* multi_query_worker(void* arg) {
     return NULL;
 }
 
+int cesar_worker__effective_threads(int num_threads, uint16_t num_queries) {
+    if (num_threads <= 0) {
+        long nprocs = sysconf(_SC_NPROCESSORS_ONLN);
+        num_threads = (int)(0.8 * (double)nprocs);
+        if (num_threads < 1) num_threads = 1;
+    }
+    if (num_queries > 0 && num_threads > (int)num_queries) {
+        num_threads = (int)num_queries;
+    }
+    if (num_threads < 1) num_threads = 1;
+    return num_threads;
+}
+
 void cesar_align_all_queries(struct HMM* hmm, struct Fasta* fasta, struct Params* params, int num_threads) {
     if (fasta->num_queries == 0) return;
 
-    if (num_threads <= 0) {
-        long nprocs = sysconf(_SC_NPROCESSORS_ONLN);
-        num_threads = (int)(0.8 * nprocs);
-        if (num_threads < 1) num_threads = 1;
-    }
-    if (num_threads > fasta->num_queries) {
-        num_threads = fasta->num_queries;
-    }
+    num_threads = cesar_worker__effective_threads(num_threads, fasta->num_queries);
 
     if (num_threads == 1 || fasta->num_queries == 1) {
         for (uint16_t q = 0; q < fasta->num_queries; q++) {
